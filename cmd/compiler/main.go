@@ -20,8 +20,8 @@ func main() {
 		panic("cannot open output file")
 	}
 
-	c := &compiler.Compiler{f}
-	code := "(zero? 0)"
+	c := compiler.NewCompiler(f)
+	code := "(+ 41 1)"
 	err = c.Compile(code)
 
 	if err != nil {

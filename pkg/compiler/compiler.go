@@ -14,10 +14,16 @@ const (
 	charTag     = 0x0f
 	emptyList   = 0x2f
 	boolTag     = 0x1f
+	wordsize    = 8
 )
 
 type Compiler struct {
-	W io.Writer
+	W  io.Writer
+	si int
+}
+
+func NewCompiler(w io.Writer) *Compiler {
+	return &Compiler{W: w, si: -wordsize}
 }
 
 func (c *Compiler) compileExpr(expr interface{}) error {
@@ -33,7 +39,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 	case []interface{}:
 		elems := expr.([]interface{})
 		if len(elems) == 0 {
-			c.emit(fmt.Sprintf("movl $%d, %%eax", emptyList))
+			c.emit(fmt.Sprintf("movl $0x%x, %%eax", emptyList))
 			return nil
 		}
 
@@ -71,7 +77,18 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 		}
 
 		if head == "null?" {
-			return fmt.Errorf("null?: TODO")
+			x := elems[1]
+			err := c.compileExpr(x)
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "zero?", err)
+			}
+			c.emit(fmt.Sprintf("cmpl $0x%x, %%eax", emptyList))
+			c.emit("movl $0, %eax")
+			c.emit("sete %al")
+			c.emit("sall $7, %eax")
+			c.emit(fmt.Sprintf("orl $0x%x, %%eax", boolTag))
+
+			return nil
 		}
 
 		if head == "zero?" {
@@ -89,10 +106,54 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			return nil
 		}
 
+		if head == "+" {
+			x := elems[1]
+			y := elems[2]
+			err := c.compileExpr(y)
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
+			}
+			c.push()
+			err = c.compileExpr(x)
+			c.si += wordsize
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
+			}
+			c.emit(fmt.Sprintf("addl %d(%%rsp), %%eax", c.si))
+
+			return nil
+		}
+
+		if head == "*" {
+			x := elems[1]
+			y := elems[2]
+			err := c.compileExpr(y)
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
+			}
+			c.push()
+			err = c.compileExpr(x)
+			c.si += wordsize
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
+			}
+			c.emit(fmt.Sprintf("imull %d(%%rsp), %%eax", c.si))
+
+			return nil
+		}
+
 		return fmt.Errorf("unsupported operation %s", head)
 	default:
 		return fmt.Errorf("error compiling code: unsupported data type")
 	}
+}
+
+// push %eax onto the stack
+func (c *Compiler) push() {
+	// si points to the top of the stack
+	// i.e. in the free space above the stack frame
+	c.emit(fmt.Sprintf("movl %%eax, %d(%%rsp)", c.si))
+	c.si -= wordsize
 }
 
 func (c *Compiler) Compile(code string) error {

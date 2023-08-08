@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"fmt"
 
 	// "fmt"
 	"testing"
@@ -18,7 +19,7 @@ ret
 `
 
 	w := &bytes.Buffer{}
-	c := &Compiler{w}
+	c := NewCompiler(w)
 
 	err := c.Compile(code)
 
@@ -46,7 +47,7 @@ ret
 `
 
 	w := &bytes.Buffer{}
-	c := &Compiler{w}
+	c := NewCompiler(w)
 
 	err := c.Compile(code)
 
@@ -56,6 +57,38 @@ ret
 
 	// fmt.Println("RESULT")
 	// fmt.Println(w.String())
+
+	if w.String() != expected {
+		t.Errorf("emmited code did not match expected output")
+	}
+}
+
+func TestNullP(t *testing.T) {
+	code := "(null? ())"
+	expected := `    .text
+    .globl  scheme_entry
+    .p2align    2
+scheme_entry:
+movl $0x2f, %eax
+cmpl $0x2f, %eax
+movl $0, %eax
+sete %al
+sall $7, %eax
+orl $0x1f, %eax
+ret
+`
+
+	w := &bytes.Buffer{}
+	c := NewCompiler(w)
+
+	err := c.Compile(code)
+
+	if err != nil {
+		t.Errorf("error compiling program: %s", err)
+	}
+
+	fmt.Println("RESULT")
+	fmt.Println(w.String())
 
 	if w.String() != expected {
 		t.Errorf("emmited code did not match expected output")
@@ -73,12 +106,42 @@ cmpl $0, %eax
 movl $0, %eax
 sete %al
 sall $7, %eax
-orl $0x3f, %ecx
+orl $0x1f, %ecx
 ret
 `
 
 	w := &bytes.Buffer{}
-	c := &Compiler{w}
+	c := NewCompiler(w)
+
+	err := c.Compile(code)
+
+	if err != nil {
+		t.Errorf("error compiling program: %s", err)
+	}
+
+	// fmt.Println("RESULT")
+	// fmt.Println(w.String())
+
+	if w.String() != expected {
+		t.Errorf("emmited code did not match expected output")
+	}
+}
+
+func TestAdd(t *testing.T) {
+	code := "(+ 13 87)"
+	expected := `    .text
+    .globl  scheme_entry
+    .p2align    2
+scheme_entry:
+movl $348, %eax
+movl %eax, -8(%rsp)
+movl $52, %eax
+addl -8(%rsp), %eax
+ret
+`
+
+	w := &bytes.Buffer{}
+	c := NewCompiler(w)
 
 	err := c.Compile(code)
 
