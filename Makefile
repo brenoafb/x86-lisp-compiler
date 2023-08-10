@@ -15,3 +15,4 @@ test:
 .PHONY: run 
 run: main
 	BLINK_PREFIX=/tmp/blink blink -m main
+

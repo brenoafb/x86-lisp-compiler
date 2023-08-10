@@ -46,6 +46,8 @@ func Parse(tokens *Tokens) (interface{}, error) {
 
 				elems = append(elems, n)
 			}
+			// remove ')'
+			tokens.pop()
 			return elems, nil
 		case ")":
 			return nil, fmt.Errorf("unexpected ')'")

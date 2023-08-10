@@ -20,14 +20,24 @@ const (
 type Compiler struct {
 	W  io.Writer
 	si int
+	env map[string]int
 }
 
 func NewCompiler(w io.Writer) *Compiler {
-	return &Compiler{W: w, si: -wordsize}
+	env := make(map[string]int)
+	return &Compiler{W: w, si: -wordsize, env: env}
 }
 
 func (c *Compiler) compileExpr(expr interface{}) error {
 	switch expr.(type) {
+	case string:
+		v := expr.(string)
+		idx, ok := c.env[v]
+		if !ok {
+			return fmt.Errorf("unbound variable '%s'", v)
+		}
+		c.emit(fmt.Sprintf("movl %d(%%rsp), %%eax", idx))
+		return nil
 	case int:
 		x := expr.(int)
 		x <<= fixnumShift
@@ -124,7 +134,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			return nil
 		}
 
-		if head == "*" {
+		if head == "-" {
 			x := elems[1]
 			y := elems[2]
 			err := c.compileExpr(y)
@@ -137,7 +147,56 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if err != nil {
 				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
 			}
+			c.emit(fmt.Sprintf("subl %d(%%rsp), %%eax", c.si))
+
+			return nil
+		}
+
+		if head == "*" {
+			x := elems[1]
+			y := elems[2]
+			err := c.compileExpr(y)
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
+			}
+			c.push()
+			err = c.compileExpr(x)
+			if err != nil {
+				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
+			}
+			c.si += wordsize
 			c.emit(fmt.Sprintf("imull %d(%%rsp), %%eax", c.si))
+
+			return nil
+		}
+
+		if head == "let" {
+			// (let <bindings...> <body>)
+			if len(elems) < 3 {
+				panic("invalid let form")
+			}
+			bindings := elems[1:len(elems)-1]
+			body := elems[len(elems)-1]
+
+			// each binding has form
+			// (<variable> <body>)
+			for _, binding := range bindings {
+				xs := binding.([]interface{})
+				v := xs[0].(string)
+				b := xs[1]
+				err := c.compileExpr(b)
+				if err != nil {
+					return fmt.Errorf("error compiling let binding: %w", err)
+				}
+				idx := c.si
+				c.push()
+				c.env[v] = idx
+			}
+
+			err := c.compileExpr(body)
+			if err != nil {
+				return fmt.Errorf("error compiling let binding body: %w", err)
+			}
 
 			return nil
 		}

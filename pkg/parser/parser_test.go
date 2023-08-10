@@ -187,3 +187,47 @@ func TestParseFlatList(t *testing.T) {
 	}
 }
 
+func TestParseLet(t *testing.T) {
+	code := "(let (x 1) x)"
+	tokens := Tokenize(code)
+	result, err := Parse(tokens)
+
+	if err != nil {
+		t.Errorf("error when parsing input: %s", err)
+	}
+
+	switch result.(type) {
+	case []interface{}:
+	default:
+		t.Errorf("received value is not a list")
+	}
+
+	elems := result.([]interface{})
+	if len(elems) != 3 {
+		t.Errorf("element count mismatch when parsing list")
+	}
+
+	if elems[0] != "let" {
+		t.Errorf("mismatch on first element")
+	}
+
+	switch elems[1].(type) {
+		case []interface{}:
+		default:
+			t.Errorf("second element is not a list")
+	}
+
+	second := elems[1].([]interface{})
+	if second[0] != "x" {
+		t.Errorf("mismatch on first nested element")
+	}
+
+	if second[1] != 1 {
+		t.Errorf("mismatch on second nested element")
+	}
+
+	if elems[2] != "x" {
+		t.Errorf("mismatch on third element")
+	}
+}
+
