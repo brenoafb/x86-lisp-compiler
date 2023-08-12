@@ -21,7 +21,7 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := "(let (x 1) (y 2) (+ x y))"
+	code := "(if (zero? 0) 0 1)"
 	err = c.Compile(code)
 
 	if err != nil {

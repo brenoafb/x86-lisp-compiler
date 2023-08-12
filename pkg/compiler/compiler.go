@@ -14,13 +14,16 @@ const (
 	charTag     = 0x0f
 	emptyList   = 0x2f
 	boolTag     = 0x1f
+	immFalse    = 0x1f
+	immTrue     = 0x9f
 	wordsize    = 8
 )
 
 type Compiler struct {
-	W  io.Writer
-	si int
-	env map[string]int
+	W            io.Writer
+	si           int
+	env          map[string]int
+	labelCounter int
 }
 
 func NewCompiler(w io.Writer) *Compiler {
@@ -175,7 +178,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if len(elems) < 3 {
 				panic("invalid let form")
 			}
-			bindings := elems[1:len(elems)-1]
+			bindings := elems[1 : len(elems)-1]
 			body := elems[len(elems)-1]
 
 			// each binding has form
@@ -199,6 +202,40 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			}
 
 			return nil
+		}
+
+		if head == "if" {
+			if len(elems) != 4 {
+				return fmt.Errorf("malformed 'if' expression")
+			}
+			test := elems[1]
+			conseq := elems[2]
+			alt := elems[3]
+
+			l0 := c.genLabel()
+			l1 := c.genLabel()
+
+			err := c.compileExpr(test)
+			if err != nil {
+				return fmt.Errorf("error compiling test in if expression: %w", err)
+			}
+			c.emit(fmt.Sprintf("cmpl $0x%x, %%eax", immFalse))
+			c.emit(fmt.Sprintf("je %s", l0))
+
+			err = c.compileExpr(conseq)
+			if err != nil {
+				return fmt.Errorf("error compiling conseq in if expression: %w", err)
+			}
+
+			c.emit(fmt.Sprintf("jmp %s", l1))
+			c.emit(fmt.Sprintf("%s:", l0))
+
+			err = c.compileExpr(alt)
+			if err != nil {
+				return fmt.Errorf("error compiling alt in if expression: %w", err)
+			}
+
+			c.emit(fmt.Sprintf("%s:", l1))
 		}
 
 		return fmt.Errorf("unsupported operation %s", head)
@@ -240,4 +277,10 @@ func (c *Compiler) preamble() {
     .p2align    2
 scheme_entry:`
 	c.emit(preamble)
+}
+
+func (c *Compiler) genLabel() string {
+	n := c.labelCounter
+	c.labelCounter++
+	return fmt.Sprintf(".L%d", n)
 }
