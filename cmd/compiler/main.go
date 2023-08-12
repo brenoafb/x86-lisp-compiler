@@ -21,7 +21,7 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := "(let (r 23) (if (zero? 1) 0 r))"
+	code := "(cdr (cons 123 321))"
 	err = c.Compile(code)
 
 	if err != nil {

@@ -239,17 +239,56 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 		}
 
 		if head == "cons" {
-			// TODO take the arguments into consideration
-			c.emit("movl $40, 0(%esi)")
-			c.emit("movl $80, 4(%esi)") // next word
+			if len(elems) != 3 {
+				return fmt.Errorf("malformed cons expression")
+			}
+			x := elems[1]
+			y := elems[2]
+
+			err := c.compileExpr(x)
+			if err != nil {
+				return fmt.Errorf("error compiling cons expression: %w", err)
+			}
+			c.emit(fmt.Sprintf("movl %%eax, %d(%%esi)", 0*wordsize))
+
+			err = c.compileExpr(y)
+			if err != nil {
+				return fmt.Errorf("error compiling cons expression: %w", err)
+			}
+			c.emit(fmt.Sprintf("movl %%eax, %d(%%esi)", 1*wordsize))
+
 			c.emit("movl %esi, %eax")
 			c.emit("orl $1, %eax")
-			c.emit("addl $8, %esi")    // bump by 2*wordsize
+
+			c.emit(fmt.Sprintf("addl $%d, %%esi", 2*wordsize))
+
+			return nil
 		}
 
 		if head == "car" {
-			// TODO take the arguments into consideration
+			if len(elems) != 2 {
+				return fmt.Errorf("malformed car expression")
+			}
+			err := c.compileExpr(elems[1])
+			if err != nil {
+				return fmt.Errorf("error compiling car expression: %w", err)
+			}
+
 			c.emit("movl -1(%eax), %eax")
+			return nil
+		}
+
+		if head == "cdr" {
+			if len(elems) != 2 {
+				return fmt.Errorf("malformed cdr expression")
+			}
+			err := c.compileExpr(elems[1])
+			if err != nil {
+				return fmt.Errorf("error compiling car expression: %w", err)
+			}
+
+			c.emit(fmt.Sprintf("movl %d(%%eax), %%eax", wordsize-1))
+			return nil
 		}
 
 		return fmt.Errorf("unsupported operation %s", head)
@@ -290,7 +329,7 @@ func (c *Compiler) preamble() {
     .globl  scheme_entry
     .p2align    2
 scheme_entry:
-movl %esi, %edi`
+movl %edi, %esi`
 	c.emit(preamble)
 }
 
