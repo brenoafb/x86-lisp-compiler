@@ -16,7 +16,7 @@ const (
 	boolTag     = 0x1f
 	immFalse    = 0x1f
 	immTrue     = 0x9f
-	wordsize    = 8
+	wordsize    = 4
 )
 
 type Compiler struct {
@@ -39,7 +39,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 		if !ok {
 			return fmt.Errorf("unbound variable '%s'", v)
 		}
-		c.emit(fmt.Sprintf("movl %d(%%rsp), %%eax", idx))
+		c.emit(fmt.Sprintf("movl %d(%%esp), %%eax", idx))
 		return nil
 	case int:
 		x := expr.(int)
@@ -132,7 +132,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if err != nil {
 				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
 			}
-			c.emit(fmt.Sprintf("addl %d(%%rsp), %%eax", c.si))
+			c.emit(fmt.Sprintf("addl %d(%%esp), %%eax", c.si))
 
 			return nil
 		}
@@ -150,7 +150,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if err != nil {
 				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
 			}
-			c.emit(fmt.Sprintf("subl %d(%%rsp), %%eax", c.si))
+			c.emit(fmt.Sprintf("subl %d(%%esp), %%eax", c.si))
 
 			return nil
 		}
@@ -168,7 +168,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
 			}
 			c.si += wordsize
-			c.emit(fmt.Sprintf("imull %d(%%rsp), %%eax", c.si))
+			c.emit(fmt.Sprintf("imull %d(%%esp), %%eax", c.si))
 
 			return nil
 		}
@@ -238,6 +238,20 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			c.emit(fmt.Sprintf("%s:", l1))
 		}
 
+		if head == "cons" {
+			// TODO take the arguments into consideration
+			c.emit("movl $40, 0(%esi)")
+			c.emit("movl $80, 4(%esi)") // next word
+			c.emit("movl %esi, %eax")
+			c.emit("orl $1, %eax")
+			c.emit("addl $8, %esi")    // bump by 2*wordsize
+		}
+
+		if head == "car" {
+			// TODO take the arguments into consideration
+			c.emit("movl -1(%eax), %eax")
+		}
+
 		return fmt.Errorf("unsupported operation %s", head)
 	default:
 		return fmt.Errorf("error compiling code: unsupported data type")
@@ -248,7 +262,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 func (c *Compiler) push() {
 	// si points to the top of the stack
 	// i.e. in the free space above the stack frame
-	c.emit(fmt.Sprintf("movl %%eax, %d(%%rsp)", c.si))
+	c.emit(fmt.Sprintf("movl %%eax, %d(%%esp)", c.si))
 	c.si -= wordsize
 }
 
@@ -275,7 +289,8 @@ func (c *Compiler) preamble() {
 	preamble := `    .text
     .globl  scheme_entry
     .p2align    2
-scheme_entry:`
+scheme_entry:
+movl %esi, %edi`
 	c.emit(preamble)
 }
 

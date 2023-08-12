@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #define empty_list      0x2f
 
@@ -14,10 +15,13 @@
 #define bool_tag		0x1f
 #define bool_shift		7
 
-int scheme_entry();
+#define HEAPSIZE        1024 * 1024
+
+int scheme_entry(void *heap);
 
 int main(int argc, char *argv[]) {
-	int val = scheme_entry();
+	void *heap = malloc(HEAPSIZE);
+	int val = scheme_entry(heap);
 	printf("0x%x\n", val);
 	if ((val & fixnum_mask) == fixnum_tag) {
 		printf("%d\n", val >> fixnum_shift);

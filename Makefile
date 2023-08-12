@@ -1,4 +1,5 @@
-CC=zig cc -target x86_64-linux-musl
+CC=zig cc -target x86-linux-musl
+OPTS=-g
 
 all: main
 
@@ -14,5 +15,5 @@ test:
 
 .PHONY: run 
 run: main
-	BLINK_PREFIX=/tmp/blink blink -m main
+	qemu-i386-static main
 
