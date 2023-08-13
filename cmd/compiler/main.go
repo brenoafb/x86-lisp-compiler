@@ -21,7 +21,10 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := "(let (v (make-vector 10)) (vector-ref (vector-set! v 2 84) 2))"
+	code := `
+(labels ((f0 (code (x) (+ x 7))))
+  (let (x 13) (labelcall f0 x)))
+`
 	err = c.Compile(code)
 
 	if err != nil {

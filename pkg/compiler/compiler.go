@@ -41,9 +41,16 @@ func (c *Compiler) Compile(code string) error {
 
 	c.preamble()
 	c.compileExpr(expr)
-	c.emit("ret")
 
 	return nil
+}
+
+func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
+	return []interface{}{
+		"labels",
+		[]interface{}{},
+		expr,
+	}, nil
 }
 
 func (c *Compiler) compileExpr(expr interface{}) error {
@@ -166,24 +173,6 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
 			}
 			c.emit(fmt.Sprintf("subl %d(%%esp), %%eax", c.si))
-
-			return nil
-		}
-
-		if head == "*" {
-			x := elems[1]
-			y := elems[2]
-			err := c.compileExpr(y)
-			if err != nil {
-				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
-			}
-			c.push()
-			err = c.compileExpr(x)
-			if err != nil {
-				return fmt.Errorf("error compiling '%s' application: %w", "+", err)
-			}
-			c.si += wordsize
-			c.emit(fmt.Sprintf("imull %d(%%esp), %%eax", c.si))
 
 			return nil
 		}
@@ -338,7 +327,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			}
 
 			vector := elems[1]
-			idx:= elems[2]
+			idx := elems[2]
 
 			err := c.compileExpr(vector)
 			if err != nil {
@@ -368,9 +357,8 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			}
 
 			vector := elems[1]
-			idx:= elems[2]
+			idx := elems[2]
 			obj := elems[3]
-
 
 			err := c.compileExpr(vector)
 			if err != nil {
@@ -407,6 +395,93 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			return nil
 		}
 
+		if head == "labels" {
+			if len(elems) != 3 {
+				return fmt.Errorf("labels form must contain 3 elements")
+			}
+
+			lvars := elems[1].([]interface{})
+			body := elems[2]
+
+			err := c.compileExpr(body)
+			if err != nil {
+				return fmt.Errorf("error compiling body in labels form: %w", err)
+			}
+
+			c.emit("ret")
+
+			for i, lvar := range lvars {
+				pair := lvar.([]interface{})
+				if len(pair) != 2 {
+					return fmt.Errorf("bad lvar in label form at index %d", i)
+				}
+				name := pair[0].(string)
+				lvarBody := pair[1]
+
+				c.emit(fmt.Sprintf("%s:", name))
+
+				err := c.compileExpr(lvarBody)
+				if err != nil {
+					return fmt.Errorf("error compiling body in labels form: %w")
+				}
+			}
+		}
+
+		if head == "code" {
+			if len(elems) != 3 {
+				return fmt.Errorf("'code' form must contain 2 parameters")
+			}
+
+			varlist := elems[1].([]interface{})
+			body := elems[2]
+
+			// assign stack location for each parameter
+			for i, x := range varlist {
+				v := x.(string)
+				c.env[v] = -wordsize * (i + 1)
+			}
+
+			// adjust the stack so that we point on top
+			// of the arguments
+			c.si = -wordsize * (len(varlist) + 1)
+
+			err := c.compileExpr(body)
+			if err != nil {
+				return fmt.Errorf("error compiling body in 'code' form: %w")
+			}
+
+			c.emit("ret")
+			c.clearEnv()
+			c.si = -wordsize
+			return nil
+		}
+
+		if head == "labelcall" {
+			if len(elems) < 2 {
+				return fmt.Errorf("labelcall form must contain at least 1 parameter")
+			}
+
+			l := elems[1].(string)
+			spSlot := c.si + 4
+			siBefore := c.si
+			// skip one slot for the return address
+			c.si -= 4
+			for i, arg := range elems[2:] {
+				err := c.compileExpr(arg)
+				if err != nil {
+					return fmt.Errorf("error compiling argument at index %d in labelcall: %w", i, err)
+				}
+				c.push()
+			}
+			// handle call and return
+			c.emit(fmt.Sprintf("addl $%d, %%esp", spSlot))
+			c.emit(fmt.Sprintf("call %s", l))
+			c.emit(fmt.Sprintf("addl $%d, %%esp", -spSlot))
+			c.si = siBefore
+
+			return nil
+		}
+
 		return fmt.Errorf("unsupported operation %s", head)
 	default:
 		return fmt.Errorf("error compiling code: unsupported data type")
@@ -419,6 +494,10 @@ func (c *Compiler) push() {
 	// i.e. in the free space above the stack frame
 	c.emit(fmt.Sprintf("movl %%eax, %d(%%esp)", c.si))
 	c.si -= wordsize
+}
+
+func (c *Compiler) clearEnv() {
+	c.env = make(map[string]int)
 }
 
 func (c *Compiler) emit(code string) {
@@ -437,5 +516,5 @@ movl %eax, %esi`
 func (c *Compiler) genLabel() string {
 	n := c.labelCounter
 	c.labelCounter++
-	return fmt.Sprintf(".L%d", n)
+	return fmt.Sprintf("L%d", n)
 }
