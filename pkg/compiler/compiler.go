@@ -22,12 +22,25 @@ const (
 type Compiler struct {
 	W            io.Writer
 	si           int
-	env          map[string]int
+	env          map[string]location
 	labelCounter int
 }
 
+type memlocation int
+
+const (
+	stack memlocation = iota
+	closure
+	heap
+)
+
+type location struct {
+	location memlocation
+	offset   int
+}
+
 func NewCompiler(w io.Writer) *Compiler {
-	env := make(map[string]int)
+	env := make(map[string]location)
 	return &Compiler{W: w, si: -wordsize, env: env}
 }
 
@@ -57,11 +70,18 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 	switch expr.(type) {
 	case string:
 		v := expr.(string)
-		idx, ok := c.env[v]
+		loc, ok := c.env[v]
 		if !ok {
 			return fmt.Errorf("unbound variable '%s'", v)
 		}
-		c.emit(fmt.Sprintf("movl %d(%%esp), %%eax", idx))
+		switch loc.location {
+		case stack:
+			c.emit(fmt.Sprintf("movl %d(%%esp), %%eax", loc.offset))
+		case closure:
+			c.emit(fmt.Sprintf("movl %d(%%edi), %%eax", loc.offset))
+		case heap:
+			c.emit(fmt.Sprintf("movl %d(%%esi), %%eax", loc.offset))
+		}
 		return nil
 	case int:
 		x := expr.(int)
@@ -182,6 +202,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if len(elems) < 3 {
 				panic("invalid let form")
 			}
+			si := c.si
 			bindings := elems[1 : len(elems)-1]
 			body := elems[len(elems)-1]
 
@@ -197,13 +218,18 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 				}
 				idx := c.si
 				c.push()
-				c.env[v] = idx
+				c.env[v] = location{
+					location: stack,
+					offset:   idx,
+				}
 			}
 
 			err := c.compileExpr(body)
 			if err != nil {
 				return fmt.Errorf("error compiling let binding body: %w", err)
 			}
+
+			c.si = si
 
 			return nil
 		}
@@ -317,7 +343,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			c.emit(fmt.Sprintf("addl $11, %%ebx"))
 			c.emit(fmt.Sprintf("andl $-8, %%ebx"))
 			// advance alloc ptr
-			c.emit(fmt.Sprintf("andl %%ebx, %%esi"))
+			c.emit(fmt.Sprintf("addl %%ebx, %%esi"))
 			return nil
 		}
 
@@ -428,22 +454,35 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 		}
 
 		if head == "code" {
-			if len(elems) != 3 {
-				return fmt.Errorf("'code' form must contain 2 parameters")
+			if len(elems) != 4 {
+				return fmt.Errorf("'code' form must contain 3 parameters")
 			}
 
-			varlist := elems[1].([]interface{})
-			body := elems[2]
+			arglist := elems[1].([]interface{})
+			freevars := elems[2].([]interface{})
+			body := elems[3]
 
-			// assign stack location for each parameter
-			for i, x := range varlist {
-				v := x.(string)
-				c.env[v] = -wordsize * (i + 1)
+			// assign stack location for each argument
+			for i, arg := range arglist {
+				v := arg.(string)
+				c.env[v] = location{
+					location: stack,
+					offset:   -wordsize * (i + 1),
+				}
 			}
 
 			// adjust the stack so that we point on top
 			// of the arguments
-			c.si = -wordsize * (len(varlist) + 1)
+			c.si = -wordsize * (len(arglist) + 1)
+
+			// assign closure location for each free variable
+			for i, arg := range freevars {
+				fv := arg.(string)
+				c.env[fv] = location{
+					location: closure,
+					offset:   -wordsize * (i + 1),
+				}
+			}
 
 			err := c.compileExpr(body)
 			if err != nil {
@@ -462,10 +501,10 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			}
 
 			l := elems[1].(string)
-			spSlot := c.si + 4
+			spSlot := c.si + wordsize
 			siBefore := c.si
 			// skip one slot for the return address
-			c.si -= 4
+			c.si -= wordsize
 			for i, arg := range elems[2:] {
 				err := c.compileExpr(arg)
 				if err != nil {
@@ -474,11 +513,92 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 				c.push()
 			}
 			// handle call and return
+			// call subtracts wordsize from esp, so we need to adjust it first
+			// to make sure we don't overwrite local variables
+			c.emit(fmt.Sprintf("addl $%d, %%esp", spSlot))
+			c.emit(fmt.Sprintf("call %s", l))
+			// restore esp
+			c.emit(fmt.Sprintf("addl $%d, %%esp", -spSlot))
+			c.si = siBefore
+
+			return nil
+		}
+
+		if head == "funcall" {
+			if len(elems) < 2 {
+				return fmt.Errorf("funcall form must contain at least 1 parameter")
+			}
+
+			f := elems[1]
+
+			spSlot := c.si
+			siBefore := c.si
+			// skip two slots for the return address and closure pointer
+			c.si -= 2 * wordsize
+			for i, arg := range elems[2:] {
+				err := c.compileExpr(arg)
+				if err != nil {
+					return fmt.Errorf("error compiling argument at index %d in funcall: %w", i, err)
+				}
+				c.push()
+			}
+
+			// save closure pointer
+			c.emit(fmt.Sprintf("movl %%edi, %d(%%esp)", siBefore))
+
+			err := c.compileExpr(f)
+			if err != nil {
+				return fmt.Errorf("error compiling function in funcall: %w", err)
+			}
+
+			// move new closure into closure pointer
+			c.emit("movl %eax, %edi")
+
+			l := "f0" // TODO read label from closure pointer
+
+			// handle call and return
 			c.emit(fmt.Sprintf("addl $%d, %%esp", spSlot))
 			c.emit(fmt.Sprintf("call %s", l))
 			c.emit(fmt.Sprintf("addl $%d, %%esp", -spSlot))
 			c.si = siBefore
 
+			return nil
+		}
+
+		if head == "closure" {
+			if len(elems) < 2 {
+				return fmt.Errorf("closure form must contain at least 1 parameter")
+			}
+
+			// TODO push label to first location at closure pointer
+			// l := elems[1].(string)
+			c.emit(fmt.Sprintf("movl $0, 0(%%esi)"))
+			for i, freevar := range elems[2:] {
+				// TODO copy free variable value directly instead
+				// of moving to eax then to heap
+				err := c.compileExpr(freevar.(string))
+				if err != nil {
+					return fmt.Errorf(
+						"error compiling free variable in closure form at index %d: %w",
+						i,
+						err,
+					)
+				}
+
+				c.emit(fmt.Sprintf("movl %%eax, %d(%%esi)", wordsize*(i+1)))
+			}
+
+			length := len(elems) - 2
+
+			c.emit(fmt.Sprintf("movl $%d, %%ebx", length))
+			// eax = esi | 6
+			c.emit(fmt.Sprintf("movl %%esi, %%eax"))
+			c.emit(fmt.Sprintf("orl $6, %%eax")) // 6 = closure tag
+			// align size to next object boundary
+			c.emit(fmt.Sprintf("addl $11, %%ebx"))
+			c.emit(fmt.Sprintf("andl $-8, %%ebx"))
+			// advance alloc ptr
+			c.emit(fmt.Sprintf("addl %%ebx, %%esi"))
 			return nil
 		}
 
@@ -497,7 +617,7 @@ func (c *Compiler) push() {
 }
 
 func (c *Compiler) clearEnv() {
-	c.env = make(map[string]int)
+	c.env = make(map[string]location)
 }
 
 func (c *Compiler) emit(code string) {

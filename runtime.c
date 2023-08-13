@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 	} else if ((val & ptr_mask) == symbol_tag) {
 		printf("#<symbol 0x%x>\n", val);
 	} else if ((val & ptr_mask) == closure_tag) {
-		printf("#<symbol 0x%x>\n", val);
+		printf("#<closure 0x%x>\n", val);
 	} else {
 		printf("#<unknown 0x%x>\n", val);
 	}
