@@ -553,12 +553,13 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 
 			// move new closure into closure pointer
 			c.emit("movl %eax, %edi")
-
-			l := "f0" // TODO read label from closure pointer
+			// clear tag
+			c.emit("andl $-8, %edi")
 
 			// handle call and return
+			c.emit("movl 0(%edi), %ebx")
 			c.emit(fmt.Sprintf("addl $%d, %%esp", spSlot))
-			c.emit(fmt.Sprintf("call %s", l))
+			c.emit("call *%ebx")
 			c.emit(fmt.Sprintf("addl $%d, %%esp", -spSlot))
 			c.si = siBefore
 
@@ -570,9 +571,8 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 				return fmt.Errorf("closure form must contain at least 1 parameter")
 			}
 
-			// TODO push label to first location at closure pointer
-			// l := elems[1].(string)
-			c.emit(fmt.Sprintf("movl $0, 0(%%esi)"))
+			l := elems[1].(string)
+			c.emit(fmt.Sprintf("movl $%s, 0(%%esi)", l))
 			for i, freevar := range elems[2:] {
 				// TODO copy free variable value directly instead
 				// of moving to eax then to heap

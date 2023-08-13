@@ -23,7 +23,7 @@ func main() {
 	c := compiler.NewCompiler(f)
 	code := `
 (labels ((c0 (code (x) () (+ x 21))))
-  (funcall (closure f0) 3))
+  (funcall (closure c0) 3))
 `
 	err = c.Compile(code)
 
