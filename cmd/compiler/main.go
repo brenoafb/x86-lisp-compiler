@@ -21,7 +21,7 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := "(cdr (cons 123 321))"
+	code := "(let (v (make-vector 10)) (vector-ref (vector-set! v 2 84) 2))"
 	err = c.Compile(code)
 
 	if err != nil {

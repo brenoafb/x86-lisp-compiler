@@ -31,6 +31,21 @@ func NewCompiler(w io.Writer) *Compiler {
 	return &Compiler{W: w, si: -wordsize, env: env}
 }
 
+func (c *Compiler) Compile(code string) error {
+	tokens := parser.Tokenize(code)
+	expr, err := parser.Parse(tokens)
+
+	if err != nil {
+		return fmt.Errorf("parse error: %w", err)
+	}
+
+	c.preamble()
+	c.compileExpr(expr)
+	c.emit("ret")
+
+	return nil
+}
+
 func (c *Compiler) compileExpr(expr interface{}) error {
 	switch expr.(type) {
 	case string:
@@ -291,6 +306,107 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			return nil
 		}
 
+		if head == "make-vector" {
+			if len(elems) != 2 {
+				return fmt.Errorf("malformed make-vector expression")
+			}
+
+			err := c.compileExpr(elems[1])
+
+			if err != nil {
+				return fmt.Errorf("error compiling make-vector call: %w", err)
+			}
+
+			// set length
+			c.emit(fmt.Sprintf("movl %%eax, 0(%%esi)"))
+			// save length
+			c.emit(fmt.Sprintf("movl %%eax, %%ebx"))
+			// eax = esi | 2
+			c.emit(fmt.Sprintf("movl %%esi, %%eax"))
+			c.emit(fmt.Sprintf("orl $2, %%eax")) // 2 = vector tag
+			// align size to next object boundary
+			c.emit(fmt.Sprintf("addl $11, %%ebx"))
+			c.emit(fmt.Sprintf("andl $-8, %%ebx"))
+			// advance alloc ptr
+			c.emit(fmt.Sprintf("andl %%ebx, %%esi"))
+			return nil
+		}
+
+		if head == "vector-ref" {
+			if len(elems) != 3 {
+				return fmt.Errorf("vector-ref requires 2 parameters")
+			}
+
+			vector := elems[1]
+			idx:= elems[2]
+
+			err := c.compileExpr(vector)
+			if err != nil {
+				return fmt.Errorf("error compiling vector expr in vector-ref call: %w", err)
+			}
+
+			// save vector ptr
+			vectorIdx := c.si
+			c.push()
+
+			err = c.compileExpr(idx)
+			if err != nil {
+				return fmt.Errorf("error compiling index expr in vector-ref call: %w", err)
+			}
+
+			c.emit("addl $1, %eax")
+			c.emit(fmt.Sprintf("movl %d(%%esp), %%ebx", vectorIdx))
+			c.emit("addl %ebx, %eax")
+			c.emit("movl 0(%eax), %eax")
+
+			return nil
+		}
+
+		if head == "vector-set!" {
+			if len(elems) != 4 {
+				return fmt.Errorf("vector-set requires 3 parameters")
+			}
+
+			vector := elems[1]
+			idx:= elems[2]
+			obj := elems[3]
+
+
+			err := c.compileExpr(vector)
+			if err != nil {
+				return fmt.Errorf("error compiling vector expr in vector-set! call: %w", err)
+			}
+
+			// save vector ptr
+			vectorIdx := c.si
+			c.push()
+
+			err = c.compileExpr(idx)
+			if err != nil {
+				return fmt.Errorf("error compiling index expr in vector-set! call: %w", err)
+			}
+
+			// save idx
+			idxIdx := c.si
+			c.push()
+
+			err = c.compileExpr(obj)
+			if err != nil {
+				return fmt.Errorf("error compiling object expr in vector-set! call: %w", err)
+			}
+
+			// compute destination pointer
+			c.emit(fmt.Sprintf("movl %d(%%esp), %%ebx", idxIdx))
+			c.emit("addl $1, %ebx")
+			c.emit(fmt.Sprintf("addl %d(%%esp), %%ebx", vectorIdx))
+			// move object into slot
+			c.emit("movl %eax, 0(%ebx)")
+			// set eax to vector pointer
+			c.emit(fmt.Sprintf("movl %d(%%esp), %%eax", vectorIdx))
+
+			return nil
+		}
+
 		return fmt.Errorf("unsupported operation %s", head)
 	default:
 		return fmt.Errorf("error compiling code: unsupported data type")
@@ -305,21 +421,6 @@ func (c *Compiler) push() {
 	c.si -= wordsize
 }
 
-func (c *Compiler) Compile(code string) error {
-	tokens := parser.Tokenize(code)
-	expr, err := parser.Parse(tokens)
-
-	if err != nil {
-		return fmt.Errorf("parse error: %w", err)
-	}
-
-	c.preamble()
-	c.compileExpr(expr)
-	c.emit("ret")
-
-	return nil
-}
-
 func (c *Compiler) emit(code string) {
 	fmt.Fprintln(c.W, code)
 }
@@ -329,7 +430,7 @@ func (c *Compiler) preamble() {
     .globl  scheme_entry
     .p2align    2
 scheme_entry:
-movl %edi, %esi`
+movl %eax, %esi`
 	c.emit(preamble)
 }
 
