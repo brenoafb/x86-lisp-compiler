@@ -49,6 +49,31 @@ func TestTokenize(t *testing.T) {
 				")",
 			},
 		},
+		{
+			code: `(hello 
+(world))`,
+			expected: []string{
+				"(",
+				"hello",
+				"(",
+				"world",
+				")",
+				")",
+			},
+		},
+		{
+			code: `(hello 
+         (world)
+    )`,
+			expected: []string{
+				"(",
+				"hello",
+				"(",
+				"world",
+				")",
+				")",
+			},
+		},
 	}
 
 	aux := func(input string, expected []string) {
@@ -156,7 +181,6 @@ func TestParseSingletonList(t *testing.T) {
 	}
 }
 
-
 func TestParseFlatList(t *testing.T) {
 	code := "(hello world)"
 	expected := []interface{}{
@@ -212,9 +236,9 @@ func TestParseLet(t *testing.T) {
 	}
 
 	switch elems[1].(type) {
-		case []interface{}:
-		default:
-			t.Errorf("second element is not a list")
+	case []interface{}:
+	default:
+		t.Errorf("second element is not a list")
 	}
 
 	second := elems[1].([]interface{})
@@ -230,4 +254,3 @@ func TestParseLet(t *testing.T) {
 		t.Errorf("mismatch on third element")
 	}
 }
-

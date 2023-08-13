@@ -100,6 +100,7 @@ func (t *Tokens) len() int {
 func Tokenize(code string) *Tokens {
 	code = strings.ReplaceAll(code, "(", " ( ")
 	code = strings.ReplaceAll(code, ")", " ) ")
+	code = strings.ReplaceAll(code, "\n", " ")
 	rawTokens := strings.Split(code, " ")
 
 	tokens := make([]string, 0)
