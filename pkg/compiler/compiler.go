@@ -140,25 +140,25 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 		}
 		switch loc.location {
 		case stack:
-			c.emit(fmt.Sprintf("movl %d(%%esp), %%eax", loc.offset))
+			c.emit("movl %d(%%esp), %%eax", loc.offset)
 		case closure:
-			c.emit(fmt.Sprintf("movl %d(%%edi), %%eax", loc.offset))
+			c.emit("movl %d(%%edi), %%eax", loc.offset)
 		case heap:
-			c.emit(fmt.Sprintf("movl %d(%%esi), %%eax", loc.offset))
+			c.emit("movl %d(%%esi), %%eax", loc.offset)
 		}
 		return nil
 	case int:
 		x := expr.(int)
 		x <<= fixnumShift
 
-		c.emit(fmt.Sprintf("movl $%d, %%eax", x))
+		c.emit("movl $%d, %%eax", x)
 
 		return nil
 
 	case []interface{}:
 		elems := expr.([]interface{})
 		if len(elems) == 0 {
-			c.emit(fmt.Sprintf("movl $0x%x, %%eax", emptyList))
+			c.emit("movl $0x%x, %%eax", emptyList)
 			return nil
 		}
 
@@ -181,7 +181,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 func (c *Compiler) push() {
 	// si points to the top of the stack
 	// i.e. in the free space above the stack frame
-	c.emit(fmt.Sprintf("movl %%eax, %d(%%esp)", c.si))
+	c.emit("movl %%eax, %d(%%esp)", c.si)
 	c.si -= wordsize
 }
 
@@ -189,8 +189,9 @@ func (c *Compiler) clearEnv() {
 	c.env = make(map[string]location)
 }
 
-func (c *Compiler) emit(code string) {
-	fmt.Fprintln(c.W, code)
+func (c *Compiler) emit(format string, a ...interface{}) {
+	s := fmt.Sprintf(format, a...)
+	fmt.Fprintln(c.W, s)
 }
 
 func (c *Compiler) preamble() {
@@ -198,7 +199,7 @@ func (c *Compiler) preamble() {
     .globl  scheme_entry
     .p2align    2
 scheme_entry:
-movl %eax, %esi`
+movl %%eax, %%esi`
 	c.emit(preamble)
 }
 

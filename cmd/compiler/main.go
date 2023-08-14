@@ -21,10 +21,11 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := `
-(labels ((c0 (code (x) () (+ x 21))))
-  (funcall (closure c0) 3))
-`
+// 	code := `
+// (labels ((c0 (code (x) () (+ x 21))))
+//   (funcall (closure c0) 3))
+// `
+	code := "(add1 1)"
 	err = c.Compile(code)
 
 	if err != nil {
