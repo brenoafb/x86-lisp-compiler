@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/brenoafb/tinycompiler/pkg/ast"
+	"github.com/brenoafb/tinycompiler/pkg/expr"
 	"github.com/brenoafb/tinycompiler/pkg/parser"
 )
 
@@ -52,197 +52,222 @@ func (c *Compiler) Compile(code string) error {
 		return fmt.Errorf("tokenizer error: %w", err)
 	}
 
-	expr, err := parser.Parse(tokens)
+	e, err := parser.Parse(tokens)
 
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}
 
-	expr, err = c.preprocess(expr)
+	e, err = c.preprocess(e)
 
 	if err != nil {
 		return fmt.Errorf("preprocessor error: %w", err)
 	}
 
+	fmt.Printf("%s", e.String())
+
 	c.preamble()
-	err = c.compileExpr(expr)
+	err = c.compileExpr(e)
 
 	if err != nil {
-		return fmt.Errorf("error compiling expr: %w", err)
+		return fmt.Errorf("error compiling expression: %w", err)
 	}
 
 	return nil
 }
 
 func (c *Compiler) gatherLambdas(
-	expr ast.Expr,
+	e expr.E,
 	counter *int,
-	lambdas map[string]ast.Expr,
-) (ast.Expr, error) {
-	switch expr.(type) {
-	case []ast.Expr:
-		elems := expr.([]ast.Expr)
-		if elems[0] == "lambda" {
-			args := elems[1].([]ast.Expr)
-			freeVars := elems[2].([]ast.Expr)
+	lambdas map[string]expr.E,
+) (expr.E, error) {
+	switch e.Typ {
+	case expr.ExprList:
+		elems := e.List
+		if expr.IsIdent(elems[0], "lambda") {
+			args := elems[1]
+			freeVars := elems[2]
 			body := elems[3]
+
+			if freeVars.Typ != expr.ExprList && freeVars.Typ != expr.ExprNil {
+				return expr.Nil(), fmt.Errorf("malformed lambda form")
+			}
 
 			var err error
 			body, err = c.gatherLambdas(body, counter, lambdas)
 			if err != nil {
-				return nil, fmt.Errorf("error gathering lambdas recursively: %w", err)
+				return expr.Nil(), fmt.Errorf("error gathering lambdas recursively: %w", err)
 			}
 
 			k := *counter
 			*counter = *counter + 1
 			label := fmt.Sprintf("f%d", k)
 
-			newExpr := []ast.Expr{
-				"closure",
-				label,
+			newExpr := []expr.E{
+				expr.Id("closure"),
+				expr.Id(label),
 			}
 
-			for _, freeVar := range freeVars {
+			for _, freeVar := range freeVars.List {
 				newExpr = append(newExpr, freeVar)
 			}
 
-			code := []ast.Expr{
-				"code",
+			code := expr.L(
+				expr.Id("code"),
 				args,
 				freeVars,
 				body,
-			}
+			)
 
 			lambdas[label] = code
-			return newExpr, nil
+			return expr.L(newExpr...), nil
 		}
 
-		newExpr := make([]ast.Expr, 0, len(elems))
+		newExpr := make([]expr.E, 0, len(elems))
 
 		for _, elem := range elems {
 			elem, err := c.gatherLambdas(elem, counter, lambdas)
 			if err != nil {
-				return nil, fmt.Errorf("error annotating free variables in sub expression: %w", err)
+				return expr.Nil(), fmt.Errorf("error annotating free variables in sub expression: %w", err)
 			}
 			newExpr = append(newExpr, elem)
 		}
 
-		return newExpr, nil
+		return expr.L(newExpr...), nil
 
 	default:
-		return expr, nil
+		return e, nil
 	}
 }
 
-func (c *Compiler) preprocess(expr ast.Expr) (ast.Expr, error) {
-	expr, err := c.annotateFreeVariables(expr)
+func (c *Compiler) preprocess(e expr.E) (expr.E, error) {
+	e, err := c.annotateFreeVariables(e)
 
 	if err != nil {
-		return nil, fmt.Errorf("preprocess: error annotating lambdas: %w", err)
+		return expr.Nil(), fmt.Errorf("preprocess: error annotating lambdas: %w", err)
 	}
 
 	counter := 0
-	lambdas := make(map[string]ast.Expr)
+	lambdas := make(map[string]expr.E)
 
-	expr, err = c.gatherLambdas(expr, &counter, lambdas)
+	e, err = c.gatherLambdas(e, &counter, lambdas)
 
 	if err != nil {
-		return nil, fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+		return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
 	}
 
-	labels := []ast.Expr{}
+	labels := []expr.E{}
 
 	for k, v := range lambdas {
-		labels = append(labels, []ast.Expr{
-			k,
+		labels = append(labels, expr.L(
+			expr.Id(k),
 			v,
-		})
+		))
 	}
 
-	result := []ast.Expr{
-		"labels",
-		labels,
-		expr,
-	}
+	result := expr.L(
+		expr.Id("labels"),
+		expr.L(labels...),
+		e,
+	)
 
 	return result, nil
 }
 
 func (c *Compiler) annotateFreeVariables(
-	expr ast.Expr,
-) (ast.Expr, error) {
-	switch expr.(type) {
-	case []ast.Expr:
-		elems := expr.([]ast.Expr)
+	e expr.E,
+) (expr.E, error) {
+	switch e.Typ {
+	case expr.ExprList:
+		elems := e.List
 		if len(elems) == 0 {
-			return elems, nil
+			return e, nil
 		}
 
 		head := elems[0]
 
-		if head == "lambda" {
+		if expr.IsIdent(head, "lambda") {
 			if len(elems) != 3 {
-				return nil, fmt.Errorf("lambda form must contain 3 elements")
+				return expr.Nil(), fmt.Errorf("lambda form must contain 3 elements")
 			}
 
-			args := elems[1].([]ast.Expr)
+			args := elems[1]
+			if (args.Typ != expr.ExprList) && (args.Typ != expr.ExprNil) {
+				return expr.Nil(), fmt.Errorf(
+					"malformed lambda expression: args is not list %+v",
+					args,
+				)
+			}
+
 			body := elems[2]
 
 			freeVars := make(map[string]struct{})
 			argMap := make(map[string]struct{})
-			for _, arg := range args {
-				v := arg.(string)
-				argMap[v] = struct{}{}
+			for i, arg := range args.List {
+				if arg.Typ != expr.ExprIdent {
+					return expr.Nil(), fmt.Errorf(
+						"malformed lambda expression: arg at index %d is not identifier",
+						i,
+					)
+				}
+				argMap[arg.Ident] = struct{}{}
 			}
 
 			err := c.gatherFreeVariables(body, argMap, freeVars)
 
 			if err != nil {
-				return nil, fmt.Errorf("error annotating lambda expression: %w", err)
+				return expr.Nil(), fmt.Errorf("error annotating lambda expression: %w", err)
 			}
 
-			freeVarList := make([]ast.Expr, 0, len(freeVars))
+			freeVarList := make([]expr.E, 0, len(freeVars))
 
 			for k := range freeVars {
-				freeVarList = append(freeVarList, k)
+				freeVarList = append(freeVarList, expr.Id(k))
 			}
 
 			body, err = c.annotateFreeVariables(body)
 
-			newExpr := []ast.Expr{
-				"lambda",
-				args,
-				freeVarList,
-				body,
+			if err != nil {
+				return expr.Nil(), fmt.Errorf(
+					"error lifting free variables from lambda body: %w",
+					err,
+				)
 			}
+
+			newExpr := expr.L(
+				expr.Id("lambda"),
+				args,
+				expr.L(freeVarList...),
+				body,
+			)
 
 			return newExpr, nil
 		}
 
-		newExpr := make([]ast.Expr, 0, len(elems))
+		newExpr := make([]expr.E, 0, len(elems))
 
 		for _, elem := range elems {
 			elem, err := c.annotateFreeVariables(elem)
 			if err != nil {
-				return nil, fmt.Errorf("error annotating free variables in sub expression: %w", err)
+				return expr.Nil(), fmt.Errorf("error annotating free variables in sub expression: %w", err)
 			}
 			newExpr = append(newExpr, elem)
 		}
 
-		return newExpr, nil
+		return expr.L(newExpr...), nil
 	default:
-		return expr, nil
+		return e, nil
 	}
 }
 
 func (c *Compiler) gatherFreeVariables(
-	expr ast.Expr,
+	e expr.E,
 	args map[string]struct{},
 	freeVars map[string]struct{},
 ) error {
-	switch expr.(type) {
-	case string:
-		v := expr.(string)
+	switch e.Typ {
+	case expr.ExprIdent:
+		v := e.Ident
 		if _, ok := builtins[v]; ok {
 			return nil
 		}
@@ -254,8 +279,8 @@ func (c *Compiler) gatherFreeVariables(
 
 		return nil
 
-	case []ast.Expr:
-		elems := expr.([]ast.Expr)
+	case expr.ExprList:
+		elems := e.List
 		if len(elems) == 0 {
 			return nil
 		}
@@ -273,10 +298,10 @@ func (c *Compiler) gatherFreeVariables(
 	return nil
 }
 
-func (c *Compiler) compileExpr(expr ast.Expr) error {
-	switch expr.(type) {
-	case string:
-		v := expr.(string)
+func (c *Compiler) compileExpr(e expr.E) error {
+	switch e.Typ {
+	case expr.ExprIdent:
+		v := e.Ident
 		loc, ok := c.env[v]
 		if !ok {
 			return fmt.Errorf("unbound variable '%s'", v)
@@ -290,16 +315,19 @@ func (c *Compiler) compileExpr(expr ast.Expr) error {
 			c.emit("movl %d(%%esi), %%eax", loc.offset)
 		}
 		return nil
-	case int:
-		x := expr.(int)
+	case expr.ExprNumber:
+		x := e.Number
 		x <<= fixnumShift
 
 		c.emit("movl $%d, %%eax", x)
 
 		return nil
+	case expr.ExprNil:
+		c.emit("movl $0x%x, %%eax", emptyList)
+		return nil
 
-	case []ast.Expr:
-		elems := expr.([]ast.Expr)
+	case expr.ExprList:
+		elems := e.List
 		if len(elems) == 0 {
 			c.emit("movl $0x%x, %%eax", emptyList)
 			return nil
@@ -307,26 +335,26 @@ func (c *Compiler) compileExpr(expr ast.Expr) error {
 
 		head := elems[0]
 
-		switch head.(type) {
-		case string:
-			if proc, ok := builtins[head.(string)]; ok {
+		switch head.Typ {
+		case expr.ExprIdent:
+			if proc, ok := builtins[head.Ident]; ok {
 				return proc(c, elems)
 			}
-		case []ast.Expr:
-			newExpr := []ast.Expr{
-				"funcall",
+		case expr.ExprList:
+			newExpr := []expr.E{
+				expr.Id("funcall"),
 			}
 
 			for _, elem := range elems {
 				newExpr = append(newExpr, elem)
 			}
 
-			return c.compileExpr(newExpr)
+			return c.compileExpr(expr.L(newExpr...))
 		}
 
-		return fmt.Errorf("unsupported operation %s", head)
+		return fmt.Errorf("unsupported operation %v", head)
 	default:
-		return fmt.Errorf("error compiling code: unsupported data type")
+		return fmt.Errorf("error compiling code: %+v", e)
 	}
 }
 

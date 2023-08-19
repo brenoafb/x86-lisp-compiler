@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
+	"github.com/brenoafb/tinycompiler/pkg/expr"
 	"github.com/stretchr/testify/require"
-	"github.com/brenoafb/tinycompiler/pkg/ast"
 )
 
 func TestTokenize(t *testing.T) {
@@ -20,6 +20,15 @@ func TestTokenize(t *testing.T) {
 			code: "()",
 			expected: []Token{
 				lparen(),
+				rparen(),
+			},
+		},
+		{
+			code: "(zero? 0)",
+			expected: []Token{
+				lparen(),
+				ident("zero?"),
+				number(0),
 				rparen(),
 			},
 		},
@@ -112,14 +121,12 @@ func TestParseEmptyList(t *testing.T) {
 	result, err := Parse(tokens)
 	require.NoError(t, err)
 
-	require.Equal(t, result, []ast.Expr{})
+	require.Equal(t, result, expr.Nil())
 }
 
 func TestParseSingletonList(t *testing.T) {
 	code := "(hello)"
-	expected := []ast.Expr{
-		"hello",
-	}
+	expected := expr.L(expr.Id("hello"))
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)
 	result, err := Parse(tokens)
@@ -130,10 +137,8 @@ func TestParseSingletonList(t *testing.T) {
 
 func TestParseFlatList(t *testing.T) {
 	code := "(hello world)"
-	expected := []ast.Expr{
-		"hello",
-		"world",
-	}
+	expected := expr.L(expr.Id("hello"), expr.Id("world"))
+
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)
 	result, err := Parse(tokens)
@@ -144,11 +149,11 @@ func TestParseFlatList(t *testing.T) {
 
 func TestParseLet(t *testing.T) {
 	code := "(let (x 1) x)"
-	expected := []ast.Expr{
-		"let",
-		[]ast.Expr{"x", 1},
-		"x",
-	}
+	expected := expr.L(
+		expr.Id("let"),
+		expr.L(expr.Id("x"), expr.N(1)),
+		expr.Id("x"),
+	)
 
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)

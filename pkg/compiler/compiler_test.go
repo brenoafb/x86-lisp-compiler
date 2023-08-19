@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/brenoafb/tinycompiler/pkg/ast"
+	"github.com/brenoafb/tinycompiler/pkg/expr"
 	"github.com/brenoafb/tinycompiler/pkg/parser"
 )
 
@@ -178,55 +178,55 @@ func TestGatherFreeVariables(t *testing.T) {
 func TestAnnotateFreeVariables(t *testing.T) {
 	tests := []struct {
 		code     string
-		expected ast.Expr
+		expected expr.E
 	}{
 		{
 			code:     "1",
-			expected: 1,
+			expected: expr.N(1),
 		},
 		{
 			code:     "a",
-			expected: "a",
+			expected: expr.Id("a"),
 		},
 		{
 			code:     "()",
-			expected: []ast.Expr{},
+			expected: expr.Nil(),
 		},
 		{
 			code:     "(+ 1 2)",
-			expected: []ast.Expr{"+", 1, 2},
+			expected: expr.L(expr.Id("+"), expr.N(1), expr.N(2)),
 		},
 		{
 			code: "(lambda (x) (f x 1))",
-			expected: []ast.Expr{
-				"lambda",
-				[]ast.Expr{"x"},
-				[]ast.Expr{"f"},
-				[]ast.Expr{"f", "x", 1},
-			},
+			expected: expr.L(
+				expr.Id("lambda"),
+				expr.L(expr.Id("x")),
+				expr.L(expr.Id("f")),
+				expr.L(expr.Id("f"), expr.Id("x"), expr.N(1)),
+			),
 		},
 		{
 			code: "(lambda (x) (+ x 1))",
-			expected: []ast.Expr{
-				"lambda",
-				[]ast.Expr{"x"},
-				[]ast.Expr{},
-				[]ast.Expr{"+", "x", 1},
-			},
+			expected: expr.L(
+				expr.Id("lambda"),
+				expr.L(expr.Id("x")),
+				expr.L(),
+				expr.L(expr.Id("+"), expr.Id("x"), expr.N(1)),
+			),
 		},
 		{
 			code: "(lambda (y) (lambda () (+ x y)))",
-			expected: []ast.Expr{
-				"lambda",
-				[]ast.Expr{"y"},
-				[]ast.Expr{"x"},
-				[]ast.Expr{
-					"lambda",
-					[]ast.Expr{},
-					[]ast.Expr{"x", "y"},
-					[]ast.Expr{"+", "x", "y"},
-				},
-			},
+			expected: expr.L(
+				expr.Id("lambda"),
+				expr.L(expr.Id("y")),
+				expr.L(expr.Id("x")),
+				expr.L(
+					expr.Id("lambda"),
+					expr.L(),
+					expr.L(expr.Id("x"), expr.Id("y")),
+					expr.L(expr.Id("+"), expr.Id("x"), expr.Id("y")),
+				),
+			),
 		},
 	}
 
@@ -253,66 +253,66 @@ func TestAnnotateFreeVariables(t *testing.T) {
 func TestGatherLambdas(t *testing.T) {
 	tests := []struct {
 		code            string
-		expected        ast.Expr
-		gatheredLambdas map[string]ast.Expr
+		expected        expr.E
+		gatheredLambdas map[string]expr.E
 	}{
 		{
 			code:            "1",
-			expected:        1,
-			gatheredLambdas: map[string]ast.Expr{},
+			expected:        expr.N(1),
+			gatheredLambdas: map[string]expr.E{},
 		},
 		{
 			code:            "(+ 1 2)",
-			expected:        []ast.Expr{"+", 1, 2},
-			gatheredLambdas: map[string]ast.Expr{},
+			expected:        expr.L(expr.Id("+"), expr.N(1), expr.N(2)),
+			gatheredLambdas: map[string]expr.E{},
 		},
 		{
 			code:     "(lambda (x) () (+ x 1))",
-			expected: []ast.Expr{"closure", "f0"},
-			gatheredLambdas: map[string]ast.Expr{
-				"f0": []ast.Expr{
-					"code",
-					[]ast.Expr{"x"},         // args
-					[]ast.Expr{},            // free vars
-					[]ast.Expr{"+", "x", 1}, // body
-				},
+			expected: expr.L(expr.Id("closure"), expr.Id("f0")),
+			gatheredLambdas: map[string]expr.E{
+				"f0": expr.L(
+					expr.Id("code"),
+					expr.L(expr.Id("x")), // args
+					expr.L(),             // free vars
+					expr.L(expr.Id("+"), expr.Id("x"), expr.N(1)), // body
+				),
 			},
 		},
 		{
 			code: "((lambda (x) () (+ x 1)) 1)",
-			expected: []ast.Expr{
-				[]ast.Expr{"closure", "f0"},
-				1,
-			},
-			gatheredLambdas: map[string]ast.Expr{
-				"f0": []ast.Expr{
-					"code",
-					[]ast.Expr{"x"},         // args
-					[]ast.Expr{},            // free vars
-					[]ast.Expr{"+", "x", 1}, // body
-				},
+			expected: expr.L(
+				expr.L(expr.Id("closure"), expr.Id("f0")),
+				expr.N(1),
+			),
+			gatheredLambdas: map[string]expr.E{
+				"f0": expr.L(
+					expr.Id("code"),
+					expr.L(expr.Id("x")), // args
+					expr.L(),             // free vars
+					expr.L(expr.Id("+"), expr.Id("x"), expr.N(1)), // body
+				),
 			},
 		},
 		{
 			code: "(lambda (y) (x) (lambda () (x y) (+ x y)))",
-			expected: []ast.Expr{
-				"closure",
-				"f1",
-				"x",
-			},
-			gatheredLambdas: map[string]ast.Expr{
-				"f0": []ast.Expr{
-					"code",
-					[]ast.Expr{},              // args
-					[]ast.Expr{"x", "y"},      // free vars
-					[]ast.Expr{"+", "x", "y"}, // body
-				},
-				"f1": []ast.Expr{
-					"code",
-					[]ast.Expr{"y"},                       // args
-					[]ast.Expr{"x"},                       // free vars
-					[]ast.Expr{"closure", "f0", "x", "y"}, // body
-				},
+			expected: expr.L(
+				expr.Id("closure"),
+				expr.Id("f1"),
+				expr.Id("x"),
+			),
+			gatheredLambdas: map[string]expr.E{
+				"f0": expr.L(
+					expr.Id("code"),
+					expr.L(),                           // args
+					expr.L(expr.Id("x"), expr.Id("y")), // free vars
+					expr.L(expr.Id("+"), expr.Id("x"), expr.Id("y")), // body
+				),
+				"f1": expr.L(
+					expr.Id("code"),
+					expr.L(expr.Id("y")), // args
+					expr.L(expr.Id("x")), // free vars
+					expr.L(expr.Id("closure"), expr.Id("f0"), expr.Id("x"), expr.Id("y")), // body
+				),
 			},
 		},
 	}
@@ -324,13 +324,13 @@ func TestGatherLambdas(t *testing.T) {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			expr, err := parser.Parse(tokens)
+			e, err := parser.Parse(tokens)
 			require.NoError(t, err)
 
-			lambdas := make(map[string]ast.Expr)
+			lambdas := make(map[string]expr.E)
 			counter := 0
 
-			result, err := c.gatherLambdas(expr, &counter, lambdas)
+			result, err := c.gatherLambdas(e, &counter, lambdas)
 			require.NoError(t, err)
 
 			fmt.Printf("%v\n", lambdas)
@@ -345,90 +345,89 @@ func TestGatherLambdas(t *testing.T) {
 func TestPreProcess(t *testing.T) {
 	tests := []struct {
 		code     string
-		expected ast.Expr
+		expected expr.E
 	}{
 		{
 			code: "1",
-			expected: []ast.Expr{
-				"labels",
-				[]ast.Expr{},
-				1,
-			},
+			expected: expr.L(
+				expr.Id("labels"),
+				expr.L(),
+				expr.N(1),
+			),
 		},
 		{
 			code: "(+ 1 2)",
-			expected: []ast.Expr{
-				"labels",
-				[]ast.Expr{},
-				[]ast.Expr{"+", 1, 2},
-			},
+			expected: expr.L(
+				expr.Id("labels"),
+				expr.L(),
+				expr.L(expr.Id("+"), expr.N(1), expr.N(2)),
+			),
 		},
 		{
 			code: "(lambda (x) (+ x 1))",
-			expected: []ast.Expr{
-				"labels",
-				[]ast.Expr{
-					[]ast.Expr{
-						"f0",
-						[]ast.Expr{
-							"code",
-							[]ast.Expr{"x"},         // args
-							[]ast.Expr{},            // free vars
-							[]ast.Expr{"+", "x", 1}, // body
-						},
-					},
-				},
-				[]ast.Expr{"closure", "f0"},
-			},
+			expected: expr.L(
+				expr.Id("labels"),
+				expr.L(
+					expr.L(
+						expr.Id("f0"),
+						expr.L(
+							expr.Id("code"),
+							expr.L(expr.Id("x")), // args
+							expr.L(),             // free vars
+							expr.L(expr.Id("+"), expr.Id("x"), expr.N(1)), // body
+						),
+					),
+				),
+				expr.L(expr.Id("closure"), expr.Id("f0")),
+			),
 		},
 		{
 			code: "((lambda (x) (+ x 1)) 1)",
-			expected: []ast.Expr{
-				"labels",
-				[]ast.Expr{
-					[]ast.Expr{
-						"f0",
-						[]ast.Expr{
-							"code",
-							[]ast.Expr{"x"},         // args
-							[]ast.Expr{},            // free vars
-							[]ast.Expr{"+", "x", 1}, // body
-						},
-					},
-				},
-				[]ast.Expr{
-					[]ast.Expr{"closure", "f0"},
-					1,
-				},
-			},
+			expected: expr.L(
+				expr.Id("labels"),
+				expr.L(
+					expr.L(
+						expr.Id("f0"),
+						expr.L(
+							expr.Id("code"),
+							expr.L(expr.Id("x")), // args
+							expr.L(),             // free vars
+							expr.L(expr.Id("+"), expr.Id("x"), expr.N(1)), // body
+						),
+					),
+				),
+				expr.L(
+					expr.L(expr.Id("closure"), expr.Id("f0")),
+					expr.N(1),
+				),
+			),
 		},
 		{
 			code: "(lambda (y) (lambda () (+ x y)))",
-			expected: []ast.Expr{
-				"labels",
-				[]ast.Expr{
-					[]ast.Expr{
-						"f0",
-						[]ast.Expr{
-							"code",
-							[]ast.Expr{},              // args
-							[]ast.Expr{"x", "y"},      // free vars
-							[]ast.Expr{"+", "x", "y"}, // body
-						},
-					},
-					[]ast.Expr{
-						"f1",
-						[]ast.Expr{
-
-							"code",
-							[]ast.Expr{"y"},                       // args
-							[]ast.Expr{"x"},                       // free vars
-							[]ast.Expr{"closure", "f0", "x", "y"}, // body
-						},
-					},
-				},
-				[]ast.Expr{"closure", "f1", "x"},
-			},
+			expected: expr.L(
+				expr.Id("labels"),
+				expr.L(
+					expr.L(
+						expr.Id("f0"),
+						expr.L(
+							expr.Id("code"),
+							expr.L(),                           // args
+							expr.L(expr.Id("x"), expr.Id("y")), // free vars
+							expr.L(expr.Id("+"), expr.Id("x"), expr.Id("y")), // body
+						),
+					),
+					expr.L(
+						expr.Id("f1"),
+						expr.L(
+							expr.Id("code"),
+							expr.L(expr.Id("y")), // args
+							expr.L(expr.Id("x")), // free vars
+							expr.L(expr.Id("closure"), expr.Id("f0"), expr.Id("x"), expr.Id("y")), // body
+						),
+					),
+				),
+				expr.L(expr.Id("closure"), expr.Id("f1"), expr.Id("x")),
+			),
 		},
 	}
 
@@ -445,7 +444,7 @@ func TestPreProcess(t *testing.T) {
 			result, err := c.preprocess(expr)
 			require.NoError(t, err)
 
-			fmt.Printf("%v\n", result)
+			fmt.Printf("%s\n", result.String())
 
 			require.Equal(t, tt.expected, result)
 		})
