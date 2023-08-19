@@ -58,12 +58,98 @@ func (c *Compiler) Compile(code string) error {
 	return nil
 }
 
+func (c *Compiler) gatherLambdas(
+	expr interface{},
+	counter *int,
+	lambdas map[string]interface{},
+) (interface{}, error) {
+	switch expr.(type) {
+	case []interface{}:
+		elems := expr.([]interface{})
+		if elems[0] == "lambda" {
+			args := elems[1].([]interface{})
+			freeVars := elems[2].([]interface{})
+			body := elems[3]
+
+			var err error
+			body, err = c.gatherLambdas(body, counter, lambdas)
+			if err != nil {
+				return nil, fmt.Errorf("error gathering lambdas recursively: %w", err)
+			}
+
+			k := *counter
+			*counter = *counter + 1
+			label := fmt.Sprintf("f%d", k)
+
+			newExpr := []interface{}{
+				"closure",
+				label,
+			}
+
+			for _, freeVar := range freeVars {
+				newExpr = append(newExpr, freeVar)
+			}
+
+			code := []interface{}{
+				"code",
+				args,
+				freeVars,
+				body,
+			}
+
+			lambdas[label] = code
+			return newExpr, nil
+		}
+
+		newExpr := make([]interface{}, 0, len(elems))
+
+		for _, elem := range elems {
+			elem, err := c.gatherLambdas(elem, counter, lambdas)
+			if err != nil {
+				return nil, fmt.Errorf("error annotating free variables in sub expression: %w", err)
+			}
+			newExpr = append(newExpr, elem)
+		}
+
+		return newExpr, nil
+
+	default:
+		return expr, nil
+	}
+}
+
 func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
-	return []interface{}{
+	expr, err := c.annotateFreeVariables(expr)
+
+	if err != nil {
+		return nil, fmt.Errorf("preprocess: error annotating lambdas: %w", err)
+	}
+
+	counter := 0
+	lambdas := make(map[string]interface{})
+
+	expr, err = c.gatherLambdas(expr, &counter, lambdas)
+
+	if err != nil {
+		return nil, fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+	}
+
+	labels := []interface{}{}
+
+	for k, v := range lambdas {
+		labels = append(labels, []interface{}{
+			k,
+			v,
+		})
+	}
+
+	result := []interface{}{
 		"labels",
-		[]interface{}{},
+		labels,
 		expr,
-	}, nil
+	}
+
+	return result, nil
 }
 
 func (c *Compiler) annotateFreeVariables(
@@ -131,8 +217,6 @@ func (c *Compiler) annotateFreeVariables(
 	default:
 		return expr, nil
 	}
-
-	return nil, fmt.Errorf("not implemented")
 }
 
 func (c *Compiler) gatherFreeVariables(

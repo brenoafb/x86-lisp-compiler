@@ -10,152 +10,64 @@ import (
 	"github.com/brenoafb/tinycompiler/pkg/parser"
 )
 
-func TestIntegerExpr(t *testing.T) {
-	code := "42"
-	expected := `    .text
-    .globl  scheme_entry
-    .p2align    2
-scheme_entry:
-movl $168, %eax
-ret
-`
-
-	w := &bytes.Buffer{}
-	c := NewCompiler(w)
-
-	err := c.Compile(code)
-
-	if err != nil {
-		t.Errorf("error compiling program: %s", err)
-	}
-
-	// fmt.Println("RESULT")
-	// fmt.Println(w.String())
-
-	if w.String() != expected {
-		t.Errorf("emmited code did not match expected output")
-	}
-}
-
-func TestAdd1(t *testing.T) {
-	code := "(add1 41)"
-	expected := `    .text
-    .globl  scheme_entry
-    .p2align    2
-scheme_entry:
-movl $164, %eax
+func TestCompileExpr(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected string
+	}{
+		{
+			code:     "42",
+			expected: "movl $168, %eax\n",
+		},
+		{
+			code: "(add1 42)",
+			expected: `movl $168, %eax
 addl $4, %eax
-ret
-`
-
-	w := &bytes.Buffer{}
-	c := NewCompiler(w)
-
-	err := c.Compile(code)
-
-	if err != nil {
-		t.Errorf("error compiling program: %s", err)
-	}
-
-	// fmt.Println("RESULT")
-	// fmt.Println(w.String())
-
-	if w.String() != expected {
-		t.Errorf("emmited code did not match expected output")
-	}
-}
-
-func TestNullP(t *testing.T) {
-	code := "(null? ())"
-	expected := `    .text
-    .globl  scheme_entry
-    .p2align    2
-scheme_entry:
-movl $0x2f, %eax
+`,
+		},
+		{
+			code: "(null? ())",
+			expected: `movl $0x2f, %eax
 cmpl $0x2f, %eax
 movl $0, %eax
 sete %al
 sall $7, %eax
 orl $0x1f, %eax
-ret
-`
-
-	w := &bytes.Buffer{}
-	c := NewCompiler(w)
-
-	err := c.Compile(code)
-
-	if err != nil {
-		t.Errorf("error compiling program: %s", err)
-	}
-
-	fmt.Println("RESULT")
-	fmt.Println(w.String())
-
-	if w.String() != expected {
-		t.Errorf("emmited code did not match expected output")
-	}
-}
-
-func TestZeroP(t *testing.T) {
-	code := "(zero? 41)"
-	expected := `    .text
-    .globl  scheme_entry
-    .p2align    2
-scheme_entry:
-movl $164, %eax
+`,
+		},
+		{
+			code: "(zero? 41)",
+			expected: `movl $164, %eax
 cmpl $0, %eax
 movl $0, %eax
 sete %al
 sall $7, %eax
-orl $0x1f, %ecx
-ret
-`
-
-	w := &bytes.Buffer{}
-	c := NewCompiler(w)
-
-	err := c.Compile(code)
-
-	if err != nil {
-		t.Errorf("error compiling program: %s", err)
-	}
-
-	// fmt.Println("RESULT")
-	// fmt.Println(w.String())
-
-	if w.String() != expected {
-		t.Errorf("emmited code did not match expected output")
-	}
-}
-
-func TestAdd(t *testing.T) {
-	code := "(+ 13 87)"
-	expected := `    .text
-    .globl  scheme_entry
-    .p2align    2
-scheme_entry:
-movl $348, %eax
-movl %eax, -8(%rsp)
+orl $0x1f, %eax
+`,
+		},
+		{
+			code: "(+ 13 87)",
+			expected: `movl $348, %eax
+movl %eax, -4(%esp)
 movl $52, %eax
-addl -8(%rsp), %eax
-ret
-`
-
-	w := &bytes.Buffer{}
-	c := NewCompiler(w)
-
-	err := c.Compile(code)
-
-	if err != nil {
-		t.Errorf("error compiling program: %s", err)
+addl -4(%esp), %eax
+`,
+		},
 	}
 
-	// fmt.Println("RESULT")
-	// fmt.Println(w.String())
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			w := &bytes.Buffer{}
+			c := NewCompiler(w)
 
-	if w.String() != expected {
-		t.Errorf("emmited code did not match expected output")
+			tokens := parser.Tokenize(tt.code)
+			expr, err := parser.Parse(tokens)
+			require.NoError(t, err)
+
+			err = c.compileExpr(expr)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, w.String())
+		})
 	}
 }
 
@@ -271,12 +183,6 @@ func TestAnnotateFreeVariables(t *testing.T) {
 	w := &bytes.Buffer{}
 	c := NewCompiler(w)
 
-	builtinsMap := make(map[string]struct{})
-
-	for k := range builtins {
-		builtinsMap[k] = struct{}{}
-	}
-
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
 			tokens := parser.Tokenize(tt.code)
@@ -284,6 +190,206 @@ func TestAnnotateFreeVariables(t *testing.T) {
 			require.NoError(t, err)
 
 			result, err := c.annotateFreeVariables(expr)
+			require.NoError(t, err)
+
+			fmt.Printf("%v\n", result)
+
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestGatherLambdas(t *testing.T) {
+	tests := []struct {
+		code            string
+		expected        interface{}
+		gatheredLambdas map[string]interface{}
+	}{
+		{
+			code:            "1",
+			expected:        1,
+			gatheredLambdas: map[string]interface{}{},
+		},
+		{
+			code:            "(+ 1 2)",
+			expected:        []interface{}{"+", 1, 2},
+			gatheredLambdas: map[string]interface{}{},
+		},
+		{
+			code:     "(lambda (x) () (+ x 1))",
+			expected: []interface{}{"closure", "f0"},
+			gatheredLambdas: map[string]interface{}{
+				"f0": []interface{}{
+					"code",
+					[]interface{}{"x"},         // args
+					[]interface{}{},            // free vars
+					[]interface{}{"+", "x", 1}, // body
+				},
+			},
+		},
+		{
+			code: "((lambda (x) () (+ x 1)) 1)",
+			expected: []interface{}{
+				[]interface{}{"closure", "f0"},
+				1,
+			},
+			gatheredLambdas: map[string]interface{}{
+				"f0": []interface{}{
+					"code",
+					[]interface{}{"x"},         // args
+					[]interface{}{},            // free vars
+					[]interface{}{"+", "x", 1}, // body
+				},
+			},
+		},
+		{
+			code: "(lambda (y) (x) (lambda () (x y) (+ x y)))",
+			expected: []interface{}{
+				"closure",
+				"f1",
+				"x",
+			},
+			gatheredLambdas: map[string]interface{}{
+				"f0": []interface{}{
+					"code",
+					[]interface{}{},              // args
+					[]interface{}{"x", "y"},      // free vars
+					[]interface{}{"+", "x", "y"}, // body
+				},
+				"f1": []interface{}{
+					"code",
+					[]interface{}{"y"},                       // args
+					[]interface{}{"x"},                       // free vars
+					[]interface{}{"closure", "f0", "x", "y"}, // body
+				},
+			},
+		},
+	}
+
+	w := &bytes.Buffer{}
+	c := NewCompiler(w)
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
+			tokens := parser.Tokenize(tt.code)
+			expr, err := parser.Parse(tokens)
+			require.NoError(t, err)
+
+			lambdas := make(map[string]interface{})
+			counter := 0
+
+			result, err := c.gatherLambdas(expr, &counter, lambdas)
+			require.NoError(t, err)
+
+			fmt.Printf("%v\n", lambdas)
+
+			require.Equal(t, tt.expected, result)
+
+			require.Equal(t, tt.gatheredLambdas, lambdas)
+		})
+	}
+}
+
+func TestPreProcess(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected interface{}
+	}{
+		{
+			code: "1",
+			expected: []interface{}{
+				"labels",
+				[]interface{}{},
+				1,
+			},
+		},
+		{
+			code: "(+ 1 2)",
+			expected: []interface{}{
+				"labels",
+				[]interface{}{},
+				[]interface{}{"+", 1, 2},
+			},
+		},
+		{
+			code: "(lambda (x) (+ x 1))",
+			expected: []interface{}{
+				"labels",
+				[]interface{}{
+					[]interface{}{
+						"f0",
+						[]interface{}{
+							"code",
+							[]interface{}{"x"},         // args
+							[]interface{}{},            // free vars
+							[]interface{}{"+", "x", 1}, // body
+						},
+					},
+				},
+				[]interface{}{"closure", "f0"},
+			},
+		},
+		{
+			code: "((lambda (x) (+ x 1)) 1)",
+			expected: []interface{}{
+				"labels",
+				[]interface{}{
+					[]interface{}{
+						"f0",
+						[]interface{}{
+							"code",
+							[]interface{}{"x"},         // args
+							[]interface{}{},            // free vars
+							[]interface{}{"+", "x", 1}, // body
+						},
+					},
+				},
+				[]interface{}{
+					[]interface{}{"closure", "f0"},
+					1,
+				},
+			},
+		},
+		{
+			code: "(lambda (y) (lambda () (+ x y)))",
+			expected: []interface{}{
+				"labels",
+				[]interface{}{
+					[]interface{}{
+						"f0",
+						[]interface{}{
+							"code",
+							[]interface{}{},              // args
+							[]interface{}{"x", "y"},      // free vars
+							[]interface{}{"+", "x", "y"}, // body
+						},
+					},
+					[]interface{}{
+						"f1",
+						[]interface{}{
+
+							"code",
+							[]interface{}{"y"},                       // args
+							[]interface{}{"x"},                       // free vars
+							[]interface{}{"closure", "f0", "x", "y"}, // body
+						},
+					},
+				},
+				[]interface{}{"closure", "f1", "x"},
+			},
+		},
+	}
+
+	w := &bytes.Buffer{}
+	c := NewCompiler(w)
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
+			tokens := parser.Tokenize(tt.code)
+			expr, err := parser.Parse(tokens)
+			require.NoError(t, err)
+
+			result, err := c.preprocess(expr)
 			require.NoError(t, err)
 
 			fmt.Printf("%v\n", result)
