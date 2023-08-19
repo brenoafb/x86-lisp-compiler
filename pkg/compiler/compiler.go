@@ -68,17 +68,12 @@ func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
 
 func (c *Compiler) annotateFreeVariables(
 	expr interface{},
-	args map[string]struct{},
-	freeVars map[string]struct{},
-) ([]string, error) {
+) (interface{}, error) {
 	switch expr.(type) {
-	case string:
-		// TODO
-		return nil, nil
 	case []interface{}:
 		elems := expr.([]interface{})
 		if len(elems) == 0 {
-			return nil, nil
+			return elems, nil
 		}
 
 		head := elems[0]
@@ -88,8 +83,53 @@ func (c *Compiler) annotateFreeVariables(
 				return nil, fmt.Errorf("lambda form must contain 3 elements")
 			}
 
-			// args := elems[1].([]interface{})
+			args := elems[1].([]interface{})
+			body := elems[2]
+
+			freeVars := make(map[string]struct{})
+			argMap := make(map[string]struct{})
+			for _, arg := range args {
+				v := arg.(string)
+				argMap[v] = struct{}{}
+			}
+
+			err := c.gatherFreeVariables(body, argMap, freeVars)
+
+			if err != nil {
+				return nil, fmt.Errorf("error annotating lambda expression: %w", err)
+			}
+
+			freeVarList := make([]interface{}, 0, len(freeVars))
+
+			for k := range freeVars {
+				freeVarList = append(freeVarList, k)
+			}
+
+			body, err = c.annotateFreeVariables(body)
+
+			newExpr := []interface{}{
+				"lambda",
+				args,
+				freeVarList,
+				body,
+			}
+
+			return newExpr, nil
 		}
+
+		newExpr := make([]interface{}, 0, len(elems))
+
+		for _, elem := range elems {
+			elem, err := c.annotateFreeVariables(elem)
+			if err != nil {
+				return nil, fmt.Errorf("error annotating free variables in sub expression: %w", err)
+			}
+			newExpr = append(newExpr, elem)
+		}
+
+		return newExpr, nil
+	default:
+		return expr, nil
 	}
 
 	return nil, fmt.Errorf("not implemented")
@@ -103,6 +143,9 @@ func (c *Compiler) gatherFreeVariables(
 	switch expr.(type) {
 	case string:
 		v := expr.(string)
+		if _, ok := builtins[v]; ok {
+			return nil
+		}
 		if _, ok := args[v]; ok {
 			return nil
 		}
@@ -165,7 +208,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 		head := elems[0]
 
 		switch head.(type) {
-			case string:
+		case string:
 			if proc, ok := builtins[head.(string)]; ok {
 				return proc(c, elems)
 			}

@@ -185,7 +185,6 @@ func TestGatherFreeVariables(t *testing.T) {
 			expectedFreeVars: []string{"x", "y", "z"},
 			args:             []string{"a", "b", "c"},
 		},
-		// Additional test cases can be added here
 	}
 
 	w := &bytes.Buffer{}
@@ -210,6 +209,86 @@ func TestGatherFreeVariables(t *testing.T) {
 			for _, key := range tt.expectedFreeVars {
 				require.Contains(t, freeVars, key, "Free vars should contain "+key)
 			}
+		})
+	}
+}
+
+func TestAnnotateFreeVariables(t *testing.T) {
+	tests := []struct {
+		code     string
+		expected interface{}
+	}{
+		{
+			code:     "1",
+			expected: 1,
+		},
+		{
+			code:     "a",
+			expected: "a",
+		},
+		{
+			code:     "()",
+			expected: []interface{}{},
+		},
+		{
+			code:     "(+ 1 2)",
+			expected: []interface{}{"+", 1, 2},
+		},
+		{
+			code: "(lambda (x) (f x 1))",
+			expected: []interface{}{
+				"lambda",
+				[]interface{}{"x"},
+				[]interface{}{"f"},
+				[]interface{}{"f", "x", 1},
+			},
+		},
+		{
+			code: "(lambda (x) (+ x 1))",
+			expected: []interface{}{
+				"lambda",
+				[]interface{}{"x"},
+				[]interface{}{},
+				[]interface{}{"+", "x", 1},
+			},
+		},
+		{
+			code: "(lambda (y) (lambda () (+ x y)))",
+			expected: []interface{}{
+				"lambda",
+				[]interface{}{"y"},
+				[]interface{}{"x"},
+				[]interface{}{
+					"lambda",
+					[]interface{}{},
+					[]interface{}{"x", "y"},
+					[]interface{}{"+", "x", "y"},
+				},
+			},
+		},
+	}
+
+	w := &bytes.Buffer{}
+	c := NewCompiler(w)
+
+	builtinsMap := make(map[string]struct{})
+
+	for k := range builtins {
+		builtinsMap[k] = struct{}{}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
+			tokens := parser.Tokenize(tt.code)
+			expr, err := parser.Parse(tokens)
+			require.NoError(t, err)
+
+			result, err := c.annotateFreeVariables(expr)
+			require.NoError(t, err)
+
+			fmt.Printf("%v\n", result)
+
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }

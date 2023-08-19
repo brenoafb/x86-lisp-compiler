@@ -11,6 +11,9 @@ var builtins map[string]builtin
 func init() {
 	builtins = map[string]builtin{
 		// special forms
+		"lambda": func(c *Compiler, elems []interface{}) error {
+			return fmt.Errorf("lambda is not implemented")
+		},
 		"let": func(c *Compiler, elems []interface{}) error {
 			// (let <bindings...> <body>)
 			if len(elems) < 3 {
@@ -223,7 +226,7 @@ func init() {
 			// handle call and return
 			c.emit("movl 0(%%edi), %%ebx")
 			c.emit("addl $%d, %%esp", spSlot)
-			c.emit("call *%$ebx")
+			c.emit("call *$ebx")
 			c.emit("addl $%d, %%esp", -spSlot)
 			c.si = siBefore
 
