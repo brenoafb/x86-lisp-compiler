@@ -59,7 +59,11 @@ func (c *Compiler) Compile(code string) error {
 	}
 
 	c.preamble()
-	c.compileExpr(expr)
+	err = c.compileExpr(expr)
+
+	if err != nil {
+		return fmt.Errorf("error compiling expr: %w", err)
+	}
 
 	return nil
 }
@@ -302,6 +306,16 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if proc, ok := builtins[head.(string)]; ok {
 				return proc(c, elems)
 			}
+		case []interface{}:
+			newExpr := []interface{}{
+				"funcall",
+			}
+
+			for _, elem := range elems  {
+				newExpr = append(newExpr, elem)
+			}
+
+			return c.compileExpr(newExpr)
 		}
 
 		return fmt.Errorf("unsupported operation %s", head)

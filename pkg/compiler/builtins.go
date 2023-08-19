@@ -226,7 +226,7 @@ func init() {
 			// handle call and return
 			c.emit("movl 0(%%edi), %%ebx")
 			c.emit("addl $%d, %%esp", spSlot)
-			c.emit("call *$ebx")
+			c.emit("call *%%ebx")
 			c.emit("addl $%d, %%esp", -spSlot)
 			c.si = siBefore
 
@@ -239,7 +239,7 @@ func init() {
 			}
 
 			l := elems[1].(string)
-			c.emit(fmt.Sprintf("movl $%s, 0(%%esi)", l))
+			c.emit("movl $%s, 0(%%esi)", l)
 			for i, freevar := range elems[2:] {
 				// TODO copy free variable value directly instead
 				// of moving to eax then to heap
