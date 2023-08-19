@@ -53,6 +53,53 @@ movl $52, %eax
 addl -4(%esp), %eax
 `,
 		},
+		{
+			code: "(let (x 1) x)",
+			expected: `movl $4, %eax
+movl %eax, -4(%esp)
+movl -4(%esp), %eax
+`,
+		},
+		{
+			code: "(let (x 1) (y 2) (+ x y))",
+			expected: `movl $4, %eax
+movl %eax, -4(%esp)
+movl $8, %eax
+movl %eax, -8(%esp)
+movl -8(%esp), %eax
+movl %eax, -12(%esp)
+movl -4(%esp), %eax
+addl -12(%esp), %eax
+`,
+		},
+		{
+			code: "(if (zero? 1) 0 1)",
+			expected: `movl $4, %eax
+cmpl $0, %eax
+movl $0, %eax
+sete %al
+sall $7, %eax
+orl $0x1f, %eax
+cmpl $0x1f, %eax
+je L0
+movl $0, %eax
+jmp L1
+L0:
+movl $4, %eax
+L1:
+`,
+		},
+		{
+			code:     "(cons 1 2)",
+			expected: `movl $4, %eax
+movl %eax, 0(%esi)
+movl $8, %eax
+movl %eax, 4(%esi)
+movl %esi, %eax
+orl $1, %eax
+addl $8, %esi
+`,
+		},
 	}
 
 	for _, tt := range tests {

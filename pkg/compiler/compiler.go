@@ -52,6 +52,12 @@ func (c *Compiler) Compile(code string) error {
 		return fmt.Errorf("parse error: %w", err)
 	}
 
+	expr, err = c.preprocess(expr)
+
+	if err != nil {
+		return fmt.Errorf("preprocessor error: %w", err)
+	}
+
 	c.preamble()
 	c.compileExpr(expr)
 
