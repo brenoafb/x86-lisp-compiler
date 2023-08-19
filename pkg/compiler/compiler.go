@@ -45,7 +45,12 @@ func NewCompiler(w io.Writer) *Compiler {
 }
 
 func (c *Compiler) Compile(code string) error {
-	tokens := parser.Tokenize(code)
+	tokens, err := parser.Tokenize(code)
+
+	if err != nil {
+		return fmt.Errorf("tokenizer error: %w", err)
+	}
+
 	expr, err := parser.Parse(tokens)
 
 	if err != nil {
@@ -311,7 +316,7 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 				"funcall",
 			}
 
-			for _, elem := range elems  {
+			for _, elem := range elems {
 				newExpr = append(newExpr, elem)
 			}
 

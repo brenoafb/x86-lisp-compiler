@@ -90,7 +90,7 @@ L1:
 `,
 		},
 		{
-			code:     "(cons 1 2)",
+			code: "(cons 1 2)",
 			expected: `movl $4, %eax
 movl %eax, 0(%esi)
 movl $8, %eax

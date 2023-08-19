@@ -3,7 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
-	"strings"
+	"unicode"
 )
 
 func pop(x []string) (string, []string) {
@@ -13,18 +13,7 @@ func pop(x []string) (string, []string) {
 	return x[0], x[1:]
 }
 
-func isAtom(x interface{}) bool {
-	switch x.(type) {
-	case int:
-		return true
-	case string:
-		return true
-	default:
-		return false
-	}
-}
-
-// Contract: upon return, each call to parse will have 
+// Contract: upon return, each call to parse will have
 // head(tokens) be the first unparsed token in the sequence
 func Parse(tokens *Tokens) (interface{}, error) {
 	if len(tokens.tokens) == 0 { // this is dumb
@@ -34,11 +23,19 @@ func Parse(tokens *Tokens) (interface{}, error) {
 	head := tokens.pop()
 
 	for {
-		switch head {
-		case "(":
+		switch head.Typ {
+		case TokenIdent:
+			return head.Ident, nil
+		case TokenNumber:
+			return head.Number, nil
+		case TokenString:
+			return head.String, nil
+		case TokenRParen:
+			return nil, fmt.Errorf("unexpected ')'")
+		case TokenLParen:
 			elems := make([]interface{}, 0)
 
-			for tokens.head() != ")" {
+			for tokens.head().Typ != TokenRParen {
 				n, err := Parse(tokens)
 				if err != nil {
 					return nil, fmt.Errorf("error parsing list: %w\n", err)
@@ -49,34 +46,65 @@ func Parse(tokens *Tokens) (interface{}, error) {
 			// remove ')'
 			tokens.pop()
 			return elems, nil
-		case ")":
-			return nil, fmt.Errorf("unexpected ')'")
-		default:
-			atom, err := parseAtom(head)
-			if err != nil {
-				return nil, fmt.Errorf("error parsing atom: %w", err)
-			}
-
-			return atom, nil
 		}
 	}
 }
 
-func parseAtom(token string) (interface{}, error) {
-	num, err := strconv.Atoi(token)
+type TokenType int
 
-	if err == nil {
-		return num, nil
+const (
+	TokenLParen TokenType = iota
+	TokenRParen
+	TokenIdent
+	TokenNumber
+	TokenString
+)
+
+type Token struct {
+	Typ    TokenType
+	Ident  string
+	Number int
+	String string
+}
+
+func lparen() Token {
+	return Token{
+		Typ: TokenLParen,
 	}
+}
 
-	return token, nil // we assume the token is a symbol
+func rparen() Token {
+	return Token{
+		Typ: TokenRParen,
+	}
+}
+
+func ident(id string) Token {
+	return Token{
+		Typ:   TokenIdent,
+		Ident: id,
+	}
+}
+
+func number(n int) Token {
+	return Token{
+		Typ:    TokenNumber,
+		Number: n,
+	}
+}
+
+func str(s string) Token {
+	return Token{
+		Typ:    TokenString,
+		String: s,
+	}
 }
 
 type Tokens struct {
-	tokens []string
+	tokens []Token
 }
 
-func (t *Tokens) pop() (string) {
+func (t *Tokens) pop() Token {
 	if len(t.tokens) == 0 {
 		panic("cannot pop off empty list")
 	}
@@ -86,31 +114,81 @@ func (t *Tokens) pop() (string) {
 	return token
 }
 
-func (t *Tokens) head() (string) {
+func (t *Tokens) head() Token {
 	if len(t.tokens) == 0 {
 		panic("cannot pop off empty list")
 	}
 	return t.tokens[0]
 }
 
+func (t *Tokens) append(tok Token) {
+	t.tokens = append(t.tokens, tok)
+}
+
 func (t *Tokens) len() int {
 	return len(t.tokens)
 }
 
-func Tokenize(code string) *Tokens {
-	code = strings.ReplaceAll(code, "(", " ( ")
-	code = strings.ReplaceAll(code, ")", " ) ")
-	code = strings.ReplaceAll(code, "\n", " ")
-	rawTokens := strings.Split(code, " ")
+func Tokenize(code string) (*Tokens, error) {
+	runes := []rune(code)
 
-	tokens := make([]string, 0)
-
-	for _, token := range rawTokens {
-		if len(token) > 0 {
-			tokens = append(tokens, token)
-		}
+	tokens := Tokens{
+		tokens: make([]Token, 0),
 	}
 
-	return &Tokens{tokens}
-}
+	i := 0
 
+	for i < len(runes) {
+		for unicode.IsSpace(runes[i]) {
+			i++
+			continue
+		}
+
+		if runes[i] == '(' {
+			tokens.append(lparen())
+			i++
+			continue
+		}
+
+		if runes[i] == ')' {
+			tokens.append(rparen())
+			i++
+			continue
+		}
+
+		var start int
+		for start = i; unicode.IsDigit(runes[i]) && i < len(runes); i++ {
+		}
+
+		if start != i {
+			// TODO handle malformed number
+			// e.g. 123hello
+			n, err := strconv.Atoi(string(runes[start:i]))
+			if err != nil {
+				return nil, fmt.Errorf(
+					"error tokenizing number: %w",
+					err,
+				)
+			}
+
+			t := number(n)
+			tokens.append(t)
+			continue
+		}
+
+		for start = i; !unicode.IsSpace(runes[i]) &&
+			runes[i] != '(' &&
+			runes[i] != ')' &&
+			i < len(runes); i++ {
+		}
+
+		if start != i {
+			t := ident(string(runes[start:i]))
+			tokens.append(t)
+			continue
+		}
+
+	}
+
+	return &tokens, nil
+}

@@ -21,7 +21,7 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := "((lambda (x) (+ x 1)) 1)"
+	code := "(cdr (cdr (cons 0 (cons 1 2))))"
 	err = c.Compile(code)
 
 	if err != nil {

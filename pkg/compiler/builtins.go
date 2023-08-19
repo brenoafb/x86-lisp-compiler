@@ -11,8 +11,22 @@ var builtins map[string]builtin
 func init() {
 	builtins = map[string]builtin{
 		// special forms
-		"lambda": func(c *Compiler, elems []interface{}) error {
-			return fmt.Errorf("lambda is not implemented")
+		"progn": func(c *Compiler, elems []interface{}) error {
+			for i, expr := range elems[1:] {
+				err := c.compileExpr(expr)
+				if err != nil {
+					return fmt.Errorf(
+						"error compiling progn expression at index %d: %w",
+						i,
+						err,
+					)
+				}
+			}
+			return nil
+		},
+		"define": func(c *Compiler, elems []interface{}) error {
+			// name := elems[1].(string)
+			return fmt.Errorf("'define' is not supported")
 		},
 		"let": func(c *Compiler, elems []interface{}) error {
 			// (let <bindings...> <body>)
@@ -267,6 +281,12 @@ func init() {
 			// advance alloc ptr
 			c.emit("addl %%ebx, %%esi")
 			return nil
+		},
+		"lambda": func(c *Compiler, elems []interface{}) error {
+			// 'lambda' shoudln't show up in preprocessed code,
+			// but we leave it here so that variable capture
+			// analysis is performed correctly
+			return fmt.Errorf("lambda is not implemented")
 		},
 		// built in functions
 		"add1": func(c *Compiler, elems []interface{}) error {
