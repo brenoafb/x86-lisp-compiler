@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/brenoafb/tinycompiler/pkg/ast"
 	"github.com/brenoafb/tinycompiler/pkg/parser"
 )
 
@@ -107,7 +108,8 @@ addl $8, %esi
 			w := &bytes.Buffer{}
 			c := NewCompiler(w)
 
-			tokens := parser.Tokenize(tt.code)
+			tokens, err := parser.Tokenize(tt.code)
+			require.NoError(t, err)
 			expr, err := parser.Parse(tokens)
 			require.NoError(t, err)
 
@@ -157,7 +159,8 @@ func TestGatherFreeVariables(t *testing.T) {
 				argsMap[arg] = struct{}{}
 			}
 
-			tokens := parser.Tokenize(tt.code)
+			tokens, err := parser.Tokenize(tt.code)
+			require.NoError(t, err)
 			expr, err := parser.Parse(tokens)
 			require.NoError(t, err)
 
@@ -175,7 +178,7 @@ func TestGatherFreeVariables(t *testing.T) {
 func TestAnnotateFreeVariables(t *testing.T) {
 	tests := []struct {
 		code     string
-		expected interface{}
+		expected ast.Expr
 	}{
 		{
 			code:     "1",
@@ -187,41 +190,41 @@ func TestAnnotateFreeVariables(t *testing.T) {
 		},
 		{
 			code:     "()",
-			expected: []interface{}{},
+			expected: []ast.Expr{},
 		},
 		{
 			code:     "(+ 1 2)",
-			expected: []interface{}{"+", 1, 2},
+			expected: []ast.Expr{"+", 1, 2},
 		},
 		{
 			code: "(lambda (x) (f x 1))",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"lambda",
-				[]interface{}{"x"},
-				[]interface{}{"f"},
-				[]interface{}{"f", "x", 1},
+				[]ast.Expr{"x"},
+				[]ast.Expr{"f"},
+				[]ast.Expr{"f", "x", 1},
 			},
 		},
 		{
 			code: "(lambda (x) (+ x 1))",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"lambda",
-				[]interface{}{"x"},
-				[]interface{}{},
-				[]interface{}{"+", "x", 1},
+				[]ast.Expr{"x"},
+				[]ast.Expr{},
+				[]ast.Expr{"+", "x", 1},
 			},
 		},
 		{
 			code: "(lambda (y) (lambda () (+ x y)))",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"lambda",
-				[]interface{}{"y"},
-				[]interface{}{"x"},
-				[]interface{}{
+				[]ast.Expr{"y"},
+				[]ast.Expr{"x"},
+				[]ast.Expr{
 					"lambda",
-					[]interface{}{},
-					[]interface{}{"x", "y"},
-					[]interface{}{"+", "x", "y"},
+					[]ast.Expr{},
+					[]ast.Expr{"x", "y"},
+					[]ast.Expr{"+", "x", "y"},
 				},
 			},
 		},
@@ -232,7 +235,8 @@ func TestAnnotateFreeVariables(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
-			tokens := parser.Tokenize(tt.code)
+			tokens, err := parser.Tokenize(tt.code)
+			require.NoError(t, err)
 			expr, err := parser.Parse(tokens)
 			require.NoError(t, err)
 
@@ -249,65 +253,65 @@ func TestAnnotateFreeVariables(t *testing.T) {
 func TestGatherLambdas(t *testing.T) {
 	tests := []struct {
 		code            string
-		expected        interface{}
-		gatheredLambdas map[string]interface{}
+		expected        ast.Expr
+		gatheredLambdas map[string]ast.Expr
 	}{
 		{
 			code:            "1",
 			expected:        1,
-			gatheredLambdas: map[string]interface{}{},
+			gatheredLambdas: map[string]ast.Expr{},
 		},
 		{
 			code:            "(+ 1 2)",
-			expected:        []interface{}{"+", 1, 2},
-			gatheredLambdas: map[string]interface{}{},
+			expected:        []ast.Expr{"+", 1, 2},
+			gatheredLambdas: map[string]ast.Expr{},
 		},
 		{
 			code:     "(lambda (x) () (+ x 1))",
-			expected: []interface{}{"closure", "f0"},
-			gatheredLambdas: map[string]interface{}{
-				"f0": []interface{}{
+			expected: []ast.Expr{"closure", "f0"},
+			gatheredLambdas: map[string]ast.Expr{
+				"f0": []ast.Expr{
 					"code",
-					[]interface{}{"x"},         // args
-					[]interface{}{},            // free vars
-					[]interface{}{"+", "x", 1}, // body
+					[]ast.Expr{"x"},         // args
+					[]ast.Expr{},            // free vars
+					[]ast.Expr{"+", "x", 1}, // body
 				},
 			},
 		},
 		{
 			code: "((lambda (x) () (+ x 1)) 1)",
-			expected: []interface{}{
-				[]interface{}{"closure", "f0"},
+			expected: []ast.Expr{
+				[]ast.Expr{"closure", "f0"},
 				1,
 			},
-			gatheredLambdas: map[string]interface{}{
-				"f0": []interface{}{
+			gatheredLambdas: map[string]ast.Expr{
+				"f0": []ast.Expr{
 					"code",
-					[]interface{}{"x"},         // args
-					[]interface{}{},            // free vars
-					[]interface{}{"+", "x", 1}, // body
+					[]ast.Expr{"x"},         // args
+					[]ast.Expr{},            // free vars
+					[]ast.Expr{"+", "x", 1}, // body
 				},
 			},
 		},
 		{
 			code: "(lambda (y) (x) (lambda () (x y) (+ x y)))",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"closure",
 				"f1",
 				"x",
 			},
-			gatheredLambdas: map[string]interface{}{
-				"f0": []interface{}{
+			gatheredLambdas: map[string]ast.Expr{
+				"f0": []ast.Expr{
 					"code",
-					[]interface{}{},              // args
-					[]interface{}{"x", "y"},      // free vars
-					[]interface{}{"+", "x", "y"}, // body
+					[]ast.Expr{},              // args
+					[]ast.Expr{"x", "y"},      // free vars
+					[]ast.Expr{"+", "x", "y"}, // body
 				},
-				"f1": []interface{}{
+				"f1": []ast.Expr{
 					"code",
-					[]interface{}{"y"},                       // args
-					[]interface{}{"x"},                       // free vars
-					[]interface{}{"closure", "f0", "x", "y"}, // body
+					[]ast.Expr{"y"},                       // args
+					[]ast.Expr{"x"},                       // free vars
+					[]ast.Expr{"closure", "f0", "x", "y"}, // body
 				},
 			},
 		},
@@ -318,11 +322,12 @@ func TestGatherLambdas(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
-			tokens := parser.Tokenize(tt.code)
+			tokens, err := parser.Tokenize(tt.code)
+			require.NoError(t, err)
 			expr, err := parser.Parse(tokens)
 			require.NoError(t, err)
 
-			lambdas := make(map[string]interface{})
+			lambdas := make(map[string]ast.Expr)
 			counter := 0
 
 			result, err := c.gatherLambdas(expr, &counter, lambdas)
@@ -340,89 +345,89 @@ func TestGatherLambdas(t *testing.T) {
 func TestPreProcess(t *testing.T) {
 	tests := []struct {
 		code     string
-		expected interface{}
+		expected ast.Expr
 	}{
 		{
 			code: "1",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"labels",
-				[]interface{}{},
+				[]ast.Expr{},
 				1,
 			},
 		},
 		{
 			code: "(+ 1 2)",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"labels",
-				[]interface{}{},
-				[]interface{}{"+", 1, 2},
+				[]ast.Expr{},
+				[]ast.Expr{"+", 1, 2},
 			},
 		},
 		{
 			code: "(lambda (x) (+ x 1))",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"labels",
-				[]interface{}{
-					[]interface{}{
+				[]ast.Expr{
+					[]ast.Expr{
 						"f0",
-						[]interface{}{
+						[]ast.Expr{
 							"code",
-							[]interface{}{"x"},         // args
-							[]interface{}{},            // free vars
-							[]interface{}{"+", "x", 1}, // body
+							[]ast.Expr{"x"},         // args
+							[]ast.Expr{},            // free vars
+							[]ast.Expr{"+", "x", 1}, // body
 						},
 					},
 				},
-				[]interface{}{"closure", "f0"},
+				[]ast.Expr{"closure", "f0"},
 			},
 		},
 		{
 			code: "((lambda (x) (+ x 1)) 1)",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"labels",
-				[]interface{}{
-					[]interface{}{
+				[]ast.Expr{
+					[]ast.Expr{
 						"f0",
-						[]interface{}{
+						[]ast.Expr{
 							"code",
-							[]interface{}{"x"},         // args
-							[]interface{}{},            // free vars
-							[]interface{}{"+", "x", 1}, // body
+							[]ast.Expr{"x"},         // args
+							[]ast.Expr{},            // free vars
+							[]ast.Expr{"+", "x", 1}, // body
 						},
 					},
 				},
-				[]interface{}{
-					[]interface{}{"closure", "f0"},
+				[]ast.Expr{
+					[]ast.Expr{"closure", "f0"},
 					1,
 				},
 			},
 		},
 		{
 			code: "(lambda (y) (lambda () (+ x y)))",
-			expected: []interface{}{
+			expected: []ast.Expr{
 				"labels",
-				[]interface{}{
-					[]interface{}{
+				[]ast.Expr{
+					[]ast.Expr{
 						"f0",
-						[]interface{}{
+						[]ast.Expr{
 							"code",
-							[]interface{}{},              // args
-							[]interface{}{"x", "y"},      // free vars
-							[]interface{}{"+", "x", "y"}, // body
+							[]ast.Expr{},              // args
+							[]ast.Expr{"x", "y"},      // free vars
+							[]ast.Expr{"+", "x", "y"}, // body
 						},
 					},
-					[]interface{}{
+					[]ast.Expr{
 						"f1",
-						[]interface{}{
+						[]ast.Expr{
 
 							"code",
-							[]interface{}{"y"},                       // args
-							[]interface{}{"x"},                       // free vars
-							[]interface{}{"closure", "f0", "x", "y"}, // body
+							[]ast.Expr{"y"},                       // args
+							[]ast.Expr{"x"},                       // free vars
+							[]ast.Expr{"closure", "f0", "x", "y"}, // body
 						},
 					},
 				},
-				[]interface{}{"closure", "f1", "x"},
+				[]ast.Expr{"closure", "f1", "x"},
 			},
 		},
 	}
@@ -432,7 +437,8 @@ func TestPreProcess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
-			tokens := parser.Tokenize(tt.code)
+			tokens, err := parser.Tokenize(tt.code)
+			require.NoError(t, err)
 			expr, err := parser.Parse(tokens)
 			require.NoError(t, err)
 

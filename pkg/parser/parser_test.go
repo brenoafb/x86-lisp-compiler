@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/brenoafb/tinycompiler/pkg/ast"
 )
 
 func TestTokenize(t *testing.T) {
@@ -53,7 +54,7 @@ func TestTokenize(t *testing.T) {
 		},
 		{
 			code: `(hello 
-(world))`,
+ (world))`,
 			expected: []Token{
 				lparen(),
 				ident("hello"),
@@ -65,13 +66,30 @@ func TestTokenize(t *testing.T) {
 		},
 		{
 			code: `(hello 
-         (world)
-    )`,
+          (world)
+     )`,
 			expected: []Token{
 				lparen(),
 				ident("hello"),
 				lparen(),
 				ident("world"),
+				rparen(),
+				rparen(),
+			},
+		},
+		{
+			code: `"hello world"`,
+			expected: []Token{
+				str("hello world"),
+			},
+		},
+		{
+			code: `(  "hello" ("world" ))`,
+			expected: []Token{
+				lparen(),
+				str("hello"),
+				lparen(),
+				str("world"),
 				rparen(),
 				rparen(),
 			},
@@ -94,12 +112,12 @@ func TestParseEmptyList(t *testing.T) {
 	result, err := Parse(tokens)
 	require.NoError(t, err)
 
-	require.Equal(t, result, []interface{}{})
+	require.Equal(t, result, []ast.Expr{})
 }
 
 func TestParseSingletonList(t *testing.T) {
 	code := "(hello)"
-	expected := []interface{}{
+	expected := []ast.Expr{
 		"hello",
 	}
 	tokens, err := Tokenize(code)
@@ -112,7 +130,7 @@ func TestParseSingletonList(t *testing.T) {
 
 func TestParseFlatList(t *testing.T) {
 	code := "(hello world)"
-	expected := []interface{}{
+	expected := []ast.Expr{
 		"hello",
 		"world",
 	}
@@ -126,9 +144,9 @@ func TestParseFlatList(t *testing.T) {
 
 func TestParseLet(t *testing.T) {
 	code := "(let (x 1) x)"
-	expected := []interface{}{
+	expected := []ast.Expr{
 		"let",
-		[]interface{}{"x", 1},
+		[]ast.Expr{"x", 1},
 		"x",
 	}
 

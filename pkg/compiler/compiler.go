@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/brenoafb/tinycompiler/pkg/ast"
 	"github.com/brenoafb/tinycompiler/pkg/parser"
 )
 
@@ -74,16 +75,16 @@ func (c *Compiler) Compile(code string) error {
 }
 
 func (c *Compiler) gatherLambdas(
-	expr interface{},
+	expr ast.Expr,
 	counter *int,
-	lambdas map[string]interface{},
-) (interface{}, error) {
+	lambdas map[string]ast.Expr,
+) (ast.Expr, error) {
 	switch expr.(type) {
-	case []interface{}:
-		elems := expr.([]interface{})
+	case []ast.Expr:
+		elems := expr.([]ast.Expr)
 		if elems[0] == "lambda" {
-			args := elems[1].([]interface{})
-			freeVars := elems[2].([]interface{})
+			args := elems[1].([]ast.Expr)
+			freeVars := elems[2].([]ast.Expr)
 			body := elems[3]
 
 			var err error
@@ -96,7 +97,7 @@ func (c *Compiler) gatherLambdas(
 			*counter = *counter + 1
 			label := fmt.Sprintf("f%d", k)
 
-			newExpr := []interface{}{
+			newExpr := []ast.Expr{
 				"closure",
 				label,
 			}
@@ -105,7 +106,7 @@ func (c *Compiler) gatherLambdas(
 				newExpr = append(newExpr, freeVar)
 			}
 
-			code := []interface{}{
+			code := []ast.Expr{
 				"code",
 				args,
 				freeVars,
@@ -116,7 +117,7 @@ func (c *Compiler) gatherLambdas(
 			return newExpr, nil
 		}
 
-		newExpr := make([]interface{}, 0, len(elems))
+		newExpr := make([]ast.Expr, 0, len(elems))
 
 		for _, elem := range elems {
 			elem, err := c.gatherLambdas(elem, counter, lambdas)
@@ -133,7 +134,7 @@ func (c *Compiler) gatherLambdas(
 	}
 }
 
-func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
+func (c *Compiler) preprocess(expr ast.Expr) (ast.Expr, error) {
 	expr, err := c.annotateFreeVariables(expr)
 
 	if err != nil {
@@ -141,7 +142,7 @@ func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
 	}
 
 	counter := 0
-	lambdas := make(map[string]interface{})
+	lambdas := make(map[string]ast.Expr)
 
 	expr, err = c.gatherLambdas(expr, &counter, lambdas)
 
@@ -149,16 +150,16 @@ func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("preprocess: error gathering lambdas: %w", err)
 	}
 
-	labels := []interface{}{}
+	labels := []ast.Expr{}
 
 	for k, v := range lambdas {
-		labels = append(labels, []interface{}{
+		labels = append(labels, []ast.Expr{
 			k,
 			v,
 		})
 	}
 
-	result := []interface{}{
+	result := []ast.Expr{
 		"labels",
 		labels,
 		expr,
@@ -168,11 +169,11 @@ func (c *Compiler) preprocess(expr interface{}) (interface{}, error) {
 }
 
 func (c *Compiler) annotateFreeVariables(
-	expr interface{},
-) (interface{}, error) {
+	expr ast.Expr,
+) (ast.Expr, error) {
 	switch expr.(type) {
-	case []interface{}:
-		elems := expr.([]interface{})
+	case []ast.Expr:
+		elems := expr.([]ast.Expr)
 		if len(elems) == 0 {
 			return elems, nil
 		}
@@ -184,7 +185,7 @@ func (c *Compiler) annotateFreeVariables(
 				return nil, fmt.Errorf("lambda form must contain 3 elements")
 			}
 
-			args := elems[1].([]interface{})
+			args := elems[1].([]ast.Expr)
 			body := elems[2]
 
 			freeVars := make(map[string]struct{})
@@ -200,7 +201,7 @@ func (c *Compiler) annotateFreeVariables(
 				return nil, fmt.Errorf("error annotating lambda expression: %w", err)
 			}
 
-			freeVarList := make([]interface{}, 0, len(freeVars))
+			freeVarList := make([]ast.Expr, 0, len(freeVars))
 
 			for k := range freeVars {
 				freeVarList = append(freeVarList, k)
@@ -208,7 +209,7 @@ func (c *Compiler) annotateFreeVariables(
 
 			body, err = c.annotateFreeVariables(body)
 
-			newExpr := []interface{}{
+			newExpr := []ast.Expr{
 				"lambda",
 				args,
 				freeVarList,
@@ -218,7 +219,7 @@ func (c *Compiler) annotateFreeVariables(
 			return newExpr, nil
 		}
 
-		newExpr := make([]interface{}, 0, len(elems))
+		newExpr := make([]ast.Expr, 0, len(elems))
 
 		for _, elem := range elems {
 			elem, err := c.annotateFreeVariables(elem)
@@ -235,7 +236,7 @@ func (c *Compiler) annotateFreeVariables(
 }
 
 func (c *Compiler) gatherFreeVariables(
-	expr interface{},
+	expr ast.Expr,
 	args map[string]struct{},
 	freeVars map[string]struct{},
 ) error {
@@ -253,8 +254,8 @@ func (c *Compiler) gatherFreeVariables(
 
 		return nil
 
-	case []interface{}:
-		elems := expr.([]interface{})
+	case []ast.Expr:
+		elems := expr.([]ast.Expr)
 		if len(elems) == 0 {
 			return nil
 		}
@@ -272,7 +273,7 @@ func (c *Compiler) gatherFreeVariables(
 	return nil
 }
 
-func (c *Compiler) compileExpr(expr interface{}) error {
+func (c *Compiler) compileExpr(expr ast.Expr) error {
 	switch expr.(type) {
 	case string:
 		v := expr.(string)
@@ -297,8 +298,8 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 
 		return nil
 
-	case []interface{}:
-		elems := expr.([]interface{})
+	case []ast.Expr:
+		elems := expr.([]ast.Expr)
 		if len(elems) == 0 {
 			c.emit("movl $0x%x, %%eax", emptyList)
 			return nil
@@ -311,8 +312,8 @@ func (c *Compiler) compileExpr(expr interface{}) error {
 			if proc, ok := builtins[head.(string)]; ok {
 				return proc(c, elems)
 			}
-		case []interface{}:
-			newExpr := []interface{}{
+		case []ast.Expr:
+			newExpr := []ast.Expr{
 				"funcall",
 			}
 

@@ -2,16 +2,18 @@ package compiler
 
 import (
 	"fmt"
+
+	"github.com/brenoafb/tinycompiler/pkg/ast"
 )
 
-type builtin func(c *Compiler, elems []interface{}) error
+type builtin func(c *Compiler, elems []ast.Expr) error
 
 var builtins map[string]builtin
 
 func init() {
 	builtins = map[string]builtin{
 		// special forms
-		"progn": func(c *Compiler, elems []interface{}) error {
+		"progn": func(c *Compiler, elems []ast.Expr) error {
 			for i, expr := range elems[1:] {
 				err := c.compileExpr(expr)
 				if err != nil {
@@ -24,11 +26,11 @@ func init() {
 			}
 			return nil
 		},
-		"define": func(c *Compiler, elems []interface{}) error {
+		"define": func(c *Compiler, elems []ast.Expr) error {
 			// name := elems[1].(string)
 			return fmt.Errorf("'define' is not supported")
 		},
-		"let": func(c *Compiler, elems []interface{}) error {
+		"let": func(c *Compiler, elems []ast.Expr) error {
 			// (let <bindings...> <body>)
 			if len(elems) < 3 {
 				panic("invalid let form")
@@ -40,7 +42,7 @@ func init() {
 			// each binding has form
 			// (<variable> <body>)
 			for _, binding := range bindings {
-				xs := binding.([]interface{})
+				xs := binding.([]ast.Expr)
 				v := xs[0].(string)
 				b := xs[1]
 				err := c.compileExpr(b)
@@ -65,7 +67,7 @@ func init() {
 			return nil
 		},
 
-		"if": func(c *Compiler, elems []interface{}) error {
+		"if": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 4 {
 				return fmt.Errorf("malformed 'if' expression")
 			}
@@ -100,12 +102,12 @@ func init() {
 
 			return nil
 		},
-		"labels": func(c *Compiler, elems []interface{}) error {
+		"labels": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 3 {
 				return fmt.Errorf("labels form must contain 3 elements")
 			}
 
-			lvars := elems[1].([]interface{})
+			lvars := elems[1].([]ast.Expr)
 			body := elems[2]
 
 			err := c.compileExpr(body)
@@ -116,7 +118,7 @@ func init() {
 			c.emit("ret")
 
 			for i, lvar := range lvars {
-				pair := lvar.([]interface{})
+				pair := lvar.([]ast.Expr)
 				if len(pair) != 2 {
 					return fmt.Errorf("bad lvar in label form at index %d", i)
 				}
@@ -134,13 +136,13 @@ func init() {
 			return nil
 		},
 
-		"code": func(c *Compiler, elems []interface{}) error {
+		"code": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 4 {
 				return fmt.Errorf("'code' form must contain 3 parameters")
 			}
 
-			arglist := elems[1].([]interface{})
-			freevars := elems[2].([]interface{})
+			arglist := elems[1].([]ast.Expr)
+			freevars := elems[2].([]ast.Expr)
 			body := elems[3]
 
 			// assign stack location for each argument
@@ -176,7 +178,7 @@ func init() {
 			return nil
 		},
 
-		"labelcall": func(c *Compiler, elems []interface{}) error {
+		"labelcall": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) < 2 {
 				return fmt.Errorf("labelcall form must contain at least 1 parameter")
 			}
@@ -205,7 +207,7 @@ func init() {
 			return nil
 		},
 
-		"funcall": func(c *Compiler, elems []interface{}) error {
+		"funcall": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) < 2 {
 				return fmt.Errorf("funcall form must contain at least 1 parameter")
 			}
@@ -247,7 +249,7 @@ func init() {
 			return nil
 		},
 
-		"closure": func(c *Compiler, elems []interface{}) error {
+		"closure": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) < 2 {
 				return fmt.Errorf("closure form must contain at least 1 parameter")
 			}
@@ -282,14 +284,14 @@ func init() {
 			c.emit("addl %%ebx, %%esi")
 			return nil
 		},
-		"lambda": func(c *Compiler, elems []interface{}) error {
+		"lambda": func(c *Compiler, elems []ast.Expr) error {
 			// 'lambda' shoudln't show up in preprocessed code,
 			// but we leave it here so that variable capture
 			// analysis is performed correctly
 			return fmt.Errorf("lambda is not implemented")
 		},
 		// built in functions
-		"add1": func(c *Compiler, elems []interface{}) error {
+		"add1": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			err := c.compileExpr(x)
 			if err != nil {
@@ -298,7 +300,7 @@ func init() {
 			c.emit("addl $4, %%eax")
 			return nil
 		},
-		"integer->char": func(c *Compiler, elems []interface{}) error {
+		"integer->char": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			err := c.compileExpr(x)
 			if err != nil {
@@ -308,7 +310,7 @@ func init() {
 			c.emit("orl $0x%x, %%eax", charTag)
 			return nil
 		},
-		"char->integer": func(c *Compiler, elems []interface{}) error {
+		"char->integer": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			err := c.compileExpr(x)
 			if err != nil {
@@ -318,7 +320,7 @@ func init() {
 			return nil
 		},
 
-		"null?": func(c *Compiler, elems []interface{}) error {
+		"null?": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			err := c.compileExpr(x)
 			if err != nil {
@@ -332,7 +334,7 @@ func init() {
 
 			return nil
 		},
-		"zero?": func(c *Compiler, elems []interface{}) error {
+		"zero?": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			err := c.compileExpr(x)
 			if err != nil {
@@ -346,7 +348,7 @@ func init() {
 
 			return nil
 		},
-		"+": func(c *Compiler, elems []interface{}) error {
+		"+": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			y := elems[2]
 			err := c.compileExpr(y)
@@ -363,7 +365,7 @@ func init() {
 
 			return nil
 		},
-		"-": func(c *Compiler, elems []interface{}) error {
+		"-": func(c *Compiler, elems []ast.Expr) error {
 			x := elems[1]
 			y := elems[2]
 			err := c.compileExpr(y)
@@ -381,7 +383,7 @@ func init() {
 			return nil
 		},
 
-		"cons": func(c *Compiler, elems []interface{}) error {
+		"cons": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 3 {
 				return fmt.Errorf("malformed cons expression")
 			}
@@ -408,7 +410,7 @@ func init() {
 			return nil
 		},
 
-		"car": func(c *Compiler, elems []interface{}) error {
+		"car": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 2 {
 				return fmt.Errorf("malformed car expression")
 			}
@@ -421,7 +423,7 @@ func init() {
 			return nil
 		},
 
-		"cdr": func(c *Compiler, elems []interface{}) error {
+		"cdr": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 2 {
 				return fmt.Errorf("malformed cdr expression")
 			}
@@ -434,7 +436,7 @@ func init() {
 			return nil
 		},
 
-		"make-vector": func(c *Compiler, elems []interface{}) error {
+		"make-vector": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 2 {
 				return fmt.Errorf("malformed make-vector expression")
 			}
@@ -460,7 +462,7 @@ func init() {
 			return nil
 		},
 
-		"vector-ref": func(c *Compiler, elems []interface{}) error {
+		"vector-ref": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 3 {
 				return fmt.Errorf("vector-ref requires 2 parameters")
 			}
@@ -490,7 +492,7 @@ func init() {
 			return nil
 		},
 
-		"vector-set!": func(c *Compiler, elems []interface{}) error {
+		"vector-set!": func(c *Compiler, elems []ast.Expr) error {
 			if len(elems) != 4 {
 				return fmt.Errorf("vector-set requires 3 parameters")
 			}

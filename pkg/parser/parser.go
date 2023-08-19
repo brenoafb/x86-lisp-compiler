@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"unicode"
+
+	"github.com/brenoafb/tinycompiler/pkg/ast"
 )
 
 func pop(x []string) (string, []string) {
@@ -15,7 +17,7 @@ func pop(x []string) (string, []string) {
 
 // Contract: upon return, each call to parse will have
 // head(tokens) be the first unparsed token in the sequence
-func Parse(tokens *Tokens) (interface{}, error) {
+func Parse(tokens *Tokens) (ast.Expr, error) {
 	if len(tokens.tokens) == 0 { // this is dumb
 		return nil, fmt.Errorf("cannot parse empty token sequence")
 	}
@@ -33,7 +35,7 @@ func Parse(tokens *Tokens) (interface{}, error) {
 		case TokenRParen:
 			return nil, fmt.Errorf("unexpected ')'")
 		case TokenLParen:
-			elems := make([]interface{}, 0)
+			elems := make([]ast.Expr, 0)
 
 			for tokens.head().Typ != TokenRParen {
 				n, err := Parse(tokens)
@@ -157,7 +159,22 @@ func Tokenize(code string) (*Tokens, error) {
 		}
 
 		var start int
-		for start = i; unicode.IsDigit(runes[i]) && i < len(runes); i++ {
+
+		if runes[i] == '"' {
+			i++
+			for start = i; i < len(runes) && runes[i] != '"'; i++ {
+			}
+			if i == len(runes) {
+				return nil, fmt.Errorf("Input ended before string literal terminated")
+			}
+
+			t := str(string(runes[start:i]))
+			tokens.append(t)
+			i++
+			continue
+		}
+
+		for start = i; i < len(runes) && unicode.IsDigit(runes[i]); i++ {
 		}
 
 		if start != i {
@@ -176,10 +193,10 @@ func Tokenize(code string) (*Tokens, error) {
 			continue
 		}
 
-		for start = i; !unicode.IsSpace(runes[i]) &&
+		for start = i; i < len(runes) &&
+			!unicode.IsSpace(runes[i]) &&
 			runes[i] != '(' &&
-			runes[i] != ')' &&
-			i < len(runes); i++ {
+			runes[i] != ')'; i++ {
 		}
 
 		if start != i {
