@@ -5,8 +5,6 @@ import (
 	"io"
 
 	"github.com/brenoafb/tinycompiler/pkg/expr"
-	"github.com/brenoafb/tinycompiler/pkg/parser"
-	pp "github.com/brenoafb/tinycompiler/pkg/preprocess"
 )
 
 const (
@@ -43,38 +41,132 @@ type location struct {
 
 func NewCompiler(w io.Writer) *Compiler {
 	return &Compiler{
-		W: w, 
-		si: -wordsize, 
+		W:   w,
+		si:  -wordsize,
 		env: make(map[string]location),
 	}
 }
 
-func (c *Compiler) Compile(code string) error {
-	tokens, err := parser.Tokenize(code)
-
-	if err != nil {
-		return fmt.Errorf("tokenizer error: %w", err)
+func (c *Compiler) Compile(e expr.E) error {
+	// we expect input to have format
+	// (ident (<constants>)
+	//        (<procedures>)
+	//   <body>)
+	if e.Typ != expr.ExprList {
+		return fmt.Errorf("input is no in expected format")
 	}
 
-	e, err := parser.Parse(tokens)
+	elems := e.List
 
-	if err != nil {
-		return fmt.Errorf("parse error: %w", err)
+	if len(elems) != 4 {
+		return fmt.Errorf("top-level form must contain 4 elements")
 	}
 
-	e, err = pp.Preprocess(e)
+	if elems[0].Typ != expr.ExprIdent {
+		// return fmt.Errorf(
+		// 	"malformed top-level form: name is not ident",
+		// )
 
-	if err != nil {
-		return fmt.Errorf("preprocessor error: %w", err)
+		panic(fmt.Errorf(
+			"malformed top-level form: name is not ident",
+		))
 	}
 
-	fmt.Printf("%s\n", e.String())
+	topLevelName := elems[0].Ident
 
-	err = c.compileExpr(e)
-
-	if err != nil {
-		return fmt.Errorf("error compiling expression: %w", err)
+	if elems[1].Typ != expr.ExprList && elems[1].Typ != expr.ExprNil {
+		return fmt.Errorf(
+			"malformed top-level form: constants entry is not list",
+		)
 	}
+
+	cvars := elems[1].List
+
+	if elems[2].Typ != expr.ExprList && elems[2].Typ != expr.ExprNil {
+		return fmt.Errorf(
+			"malformed top-level form: procedures entry is not list",
+		)
+	}
+
+	lvars := elems[2].List
+
+	c.emit("\t.data")
+	c.emit("\t.align\t8")
+
+	for i, cvar := range cvars {
+		if cvar.Typ != expr.ExprList && cvar.Typ != expr.ExprNil {
+			return fmt.Errorf(
+				"malformed top-level form: cvar at index %d is not list",
+				i,
+			)
+		}
+		pair := cvar.List
+		if len(pair) != 2 {
+			return fmt.Errorf("bad cvar in label form at index %d", i)
+		}
+
+		if pair[0].Typ != expr.ExprIdent {
+			return fmt.Errorf(
+				"malformed '_main' form: identifier at index %d is not identifier",
+				i,
+			)
+		}
+
+		name := pair[0].Ident
+		cvarBody := pair[1]
+
+		c.emit("%s:", name)
+
+		err := c.compileExpr(cvarBody)
+		if err != nil {
+			return fmt.Errorf("error compiling body in _main form: %w", err)
+		}
+	}
+
+	c.emit("\t.text")
+	c.emit("\t.global %s", topLevelName)
+	c.emit("\t.p2align\t2")
+
+	for i, lvar := range lvars {
+		if lvar.Typ != expr.ExprList && lvar.Typ != expr.ExprNil {
+			return fmt.Errorf(
+				"malformed '_main' form: lvar at index %d is not list",
+				i,
+			)
+		}
+		pair := lvar.List
+		if len(pair) != 2 {
+			return fmt.Errorf("bad lvar in label form at index %d", i)
+		}
+
+		if pair[0].Typ != expr.ExprIdent {
+			return fmt.Errorf(
+				"malformed '_main' form: identifier at index %d is not identifier",
+				i,
+			)
+		}
+
+		name := pair[0].Ident
+		lvarBody := pair[1]
+
+		c.emit("%s:", name)
+
+		err := c.compileExpr(lvarBody)
+		if err != nil {
+			return fmt.Errorf("error compiling body in _main form: %w", err)
+		}
+	}
+
+	body := elems[3]
+
+	c.emit("%s:", topLevelName)
+
+	err := c.compileExpr(body)
+	if err != nil {
+		return fmt.Errorf("error compiling body in _main form: %w", err)
+	}
+
+	c.emit("ret")
 
 	return nil
 }
@@ -133,7 +225,8 @@ func (c *Compiler) compileExpr(e expr.E) error {
 			return c.compileExpr(expr.L(newExpr...))
 		}
 
-		return fmt.Errorf("unsupported operation %v", head)
+		// return fmt.Errorf("unsupported operation %s", head.String())
+		panic(fmt.Errorf("unsupported operation %s", head.String()))
 	default:
 		// return fmt.Errorf("error compiling code: %+v", e.String())
 		panic(fmt.Errorf("error compiling code: %+v", e.String()))

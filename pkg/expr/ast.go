@@ -1,9 +1,5 @@
 package expr
 
-import (
-	"strconv"
-)
-
 type ExprType int
 
 const (
@@ -22,35 +18,6 @@ type E struct {
 	Ident  string
 	Str    string
 	List   []E
-}
-
-func (e *E) String() string {
-	switch e.Typ {
-	case ExprNil:
-		return "nil"
-	case ExprIdent:
-		return e.Ident
-	case ExprBool:
-		if e.Bool {
-			return "true"
-		}
-		return "false"
-	case ExprNumber:
-		return strconv.Itoa(e.Number)
-	case ExprString:
-		return "\"" + e.Str + "\""
-	case ExprList:
-		listStr := "("
-		for i, expr := range e.List {
-			if i > 0 {
-				listStr += " "
-			}
-			listStr += expr.String()
-		}
-		listStr += ")"
-		return listStr
-	}
-	return ""
 }
 
 func Nil() E {

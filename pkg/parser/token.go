@@ -95,9 +95,13 @@ func Tokenize(code string) (*Tokens, error) {
 	i := 0
 
 	for i < len(runes) {
-		for unicode.IsSpace(runes[i]) {
+		for i < len(runes) && unicode.IsSpace(runes[i]) {
 			i++
 			continue
+		}
+
+		if i >= len(runes) {
+			break
 		}
 
 		if runes[i] == '(' {

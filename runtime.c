@@ -24,12 +24,12 @@
 
 #define HEAPSIZE        1024 * 1024
 
-int entry(void *heap);
+int lisp_entry(void *heap);
 
 int main(int argc, char *argv[]) {
 	void *heap = malloc(HEAPSIZE);
 	printf("heap: 0x%x\n", heap);
-	int val = entry(heap);
+	int val = lisp_entry(heap);
 	printf("0x%x\n", val);
 	if ((val & fixnum_mask) == fixnum_tag) {
 		printf("%d\n", val >> fixnum_shift);

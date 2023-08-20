@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brenoafb/tinycompiler/pkg/compiler"
 	"github.com/brenoafb/tinycompiler/pkg/parser"
 	pp "github.com/brenoafb/tinycompiler/pkg/preprocess"
 )
 
 var (
-	input  = flag.String("i", "", "input file")
-	output = flag.String("o", "output.s", "file to write assembly output to")
-	nopp   = flag.Bool("np", false, "don't pre-process input")
+	input = flag.String("i", "", "input file")
 )
 
 func main() {
@@ -42,23 +39,11 @@ func main() {
 		panic(fmt.Errorf("parser error: %w", err))
 	}
 
-	if !*nopp {
-		e, err = pp.Preprocess(e)
-		if err != nil {
-			panic(fmt.Errorf("preprocessor error: %w", err))
-		}
-	}
-
-	f, err := os.Create(*output)
+	e, err = pp.Preprocess(e)
 
 	if err != nil {
-		panic("cannot open output file")
+		panic(fmt.Errorf("preprocessor error: %w", err))
 	}
 
-	c := compiler.NewCompiler(f)
-	err = c.Compile(e)
-
-	if err != nil {
-		panic(err)
-	}
+	fmt.Println(e.String())
 }

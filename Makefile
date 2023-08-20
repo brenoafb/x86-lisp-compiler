@@ -3,14 +3,20 @@ OPTS=-g
 
 all: main
 
-compiler: cmd/compiler/*.go pkg/compiler/*.go
-	go build -o compiler ./cmd/compiler/
+expr: pkg/expr/*.go
+	go build ./pkg/expr/
 
-output.s: compiler
-	./compiler -o output.s
+preprocess: expr cmd/preprocess/*.go pkg/preprocess/*.go
+	go install ./cmd/preprocess/
 
-main: runtime.c output.s
-	$(CC) $(OPTS) runtime.c output.s -o main
+compiler: expr cmd/compiler/*.go pkg/compiler/*.go
+	go install ./cmd/compiler/
+
+%.s: %.lisp compiler
+	compiler -i $< -o $@ -np
+
+main: runtime.c lisp_entry.s
+	$(CC) $(OPTS) runtime.c lisp_entry.s -o main
 
 .PHONY: test
 test: 
