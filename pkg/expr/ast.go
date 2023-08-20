@@ -38,7 +38,7 @@ func (e *E) String() string {
 	case ExprNumber:
 		return strconv.Itoa(e.Number)
 	case ExprString:
-		return "\"" + e.String() + "\""
+		return "\"" + e.Str + "\""
 	case ExprList:
 		listStr := "("
 		for i, expr := range e.List {

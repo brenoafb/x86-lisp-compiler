@@ -21,7 +21,9 @@ func main() {
 	}
 
 	c := compiler.NewCompiler(f)
-	code := "((lambda (x) (+ x 1)) 1)"
+	code := `
+	(let (x "hello world")
+  	  x)`
 	err = c.Compile(code)
 
 	if err != nil {

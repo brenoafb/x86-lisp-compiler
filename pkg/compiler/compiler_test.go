@@ -250,6 +250,54 @@ func TestAnnotateFreeVariables(t *testing.T) {
 	}
 }
 
+func TestGatherStrings(t *testing.T) {
+	tests := []struct {
+		code            string
+		expected        expr.E
+		gatheredStrings map[string]expr.E
+	}{
+		{
+			code:            "1",
+			expected:        expr.N(1),
+			gatheredStrings: map[string]expr.E{},
+		},
+		{
+			code:            "(+ 1 2)",
+			expected:        expr.L(expr.Id("+"), expr.N(1), expr.N(2)),
+			gatheredStrings: map[string]expr.E{},
+		},
+		{
+			code:     `"hello world"`,
+			expected: expr.L(expr.Id("string"), expr.Id("s0")),
+			gatheredStrings: map[string]expr.E{
+				"s0": expr.S("hello world"),
+			},
+		},
+	}
+
+	w := &bytes.Buffer{}
+	c := NewCompiler(w)
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
+			tokens, err := parser.Tokenize(tt.code)
+			require.NoError(t, err)
+			e, err := parser.Parse(tokens)
+			require.NoError(t, err)
+
+			strings := make(map[string]expr.E)
+			counter := 0
+
+			result, err := c.gatherStrings(e, &counter, strings)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expected, result)
+
+			require.Equal(t, tt.gatheredStrings, strings)
+		})
+	}
+}
+
 func TestGatherLambdas(t *testing.T) {
 	tests := []struct {
 		code            string

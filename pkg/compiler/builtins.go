@@ -51,6 +51,7 @@ func init() {
 				if xs[0].Typ != expr.ExprIdent {
 					return fmt.Errorf(
 						"error compiling let binding: variable at index %d is not identifier",
+
 						i,
 					)
 				}
@@ -113,30 +114,68 @@ func init() {
 
 			return nil
 		},
-		"labels": func(c *Compiler, elems []expr.E) error {
-			if len(elems) != 3 {
-				return fmt.Errorf("labels form must contain 3 elements")
+		"_main": func(c *Compiler, elems []expr.E) error {
+			if len(elems) != 4 {
+				return fmt.Errorf("_main form must contain 3 elements")
 			}
 
 			if elems[1].Typ != expr.ExprList && elems[1].Typ != expr.ExprNil {
 				return fmt.Errorf(
-					"malformed 'labels' form: lvars is not list",
+					"malformed '_main' form: lvars is not list",
 				)
 			}
-			lvars := elems[1].List
-			body := elems[2]
 
-			err := c.compileExpr(body)
-			if err != nil {
-				return fmt.Errorf("error compiling body in labels form: %w", err)
+			cvars := elems[1].List
+
+			c.emit("\t.data")
+			c.emit("\t.align\t8")
+
+			for i, cvar := range cvars {
+				if cvar.Typ != expr.ExprList && cvar.Typ != expr.ExprNil {
+					return fmt.Errorf(
+						"malformed '_main' form: cvar at index %d is not list",
+						i,
+					)
+				}
+				pair := cvar.List
+				if len(pair) != 2 {
+					return fmt.Errorf("bad cvar in label form at index %d", i)
+				}
+
+				if pair[0].Typ != expr.ExprIdent {
+					return fmt.Errorf(
+						"malformed '_main' form: identifier at index %d is not identifier",
+						i,
+					)
+				}
+
+				name := pair[0].Ident
+				cvarBody := pair[1]
+
+				c.emit("%s:", name)
+
+				err := c.compileExpr(cvarBody)
+				if err != nil {
+					return fmt.Errorf("error compiling body in _main form: %w", err)
+				}
 			}
 
-			c.emit("ret")
+			if elems[2].Typ != expr.ExprList && elems[2].Typ != expr.ExprNil {
+				return fmt.Errorf(
+					"malformed '_main' form: lvars is not list",
+				)
+			}
+
+			lvars := elems[2].List
+
+			c.emit("\t.text")
+			c.emit("\t.global entry")
+			c.emit("\t.p2align\t2")
 
 			for i, lvar := range lvars {
 				if lvar.Typ != expr.ExprList && lvar.Typ != expr.ExprNil {
 					return fmt.Errorf(
-						"malformed 'labels' form: lvar at index %d is not list",
+						"malformed '_main' form: lvar at index %d is not list",
 						i,
 					)
 				}
@@ -147,7 +186,7 @@ func init() {
 
 				if pair[0].Typ != expr.ExprIdent {
 					return fmt.Errorf(
-						"malformed 'labels' form: identifier at index %d is not identifier",
+						"malformed '_main' form: identifier at index %d is not identifier",
 						i,
 					)
 				}
@@ -159,9 +198,20 @@ func init() {
 
 				err := c.compileExpr(lvarBody)
 				if err != nil {
-					return fmt.Errorf("error compiling body in labels form: %w", err)
+					return fmt.Errorf("error compiling body in _main form: %w", err)
 				}
 			}
+
+			body := elems[3]
+
+			c.emit("entry:")
+
+			err := c.compileExpr(body)
+			if err != nil {
+				return fmt.Errorf("error compiling body in _main form: %w", err)
+			}
+
+			c.emit("ret")
 
 			return nil
 		},
@@ -345,6 +395,37 @@ func init() {
 			return fmt.Errorf("lambda is not implemented")
 		},
 		// built in functions
+		// TODO add string support e.g. (string s1)
+		"string-ref": func(c *Compiler, elems []expr.E) error {
+			if len(elems) != 2 {
+				return fmt.Errorf("string-ref: must have one argument")
+			}
+			if elems[1].Typ != expr.ExprIdent {
+				return fmt.Errorf("string-ref: argument must be label")
+			}
+			label := elems[1].Ident
+			c.emit("movl $%s, %%eax", label)
+			// TODO push to heap and align esi pointer
+			// see make-vector for reference
+			// TODO set the length as the first word
+			// tag with a string tag
+
+			// eax = esi | 3
+			c.emit("orl $3, %%eax") // 2 = string tag
+			return nil
+		},
+		"string-init": func(c *Compiler, elems []expr.E) error {
+			if len(elems) != 2 {
+				return fmt.Errorf("string-init: must have one argument")
+			}
+			if elems[1].Typ != expr.ExprString {
+				return fmt.Errorf("string-init: argument must be string")
+			}
+
+			// output the string as is for now
+			c.emit(".ascii \"%s\"", elems[1].Str)
+			return nil
+		},
 		"add1": func(c *Compiler, elems []expr.E) error {
 			x := elems[1]
 			err := c.compileExpr(x)

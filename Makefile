@@ -3,8 +3,11 @@ OPTS=-g
 
 all: main
 
-output.s: cmd/compiler/main.go pkg/compiler/compiler.go
-	go run ./cmd/compiler/main.go -- -o output.s
+compiler: cmd/compiler/*.go pkg/compiler/*.go
+	go build -o compiler ./cmd/compiler/
+
+output.s: compiler
+	./compiler -o output.s
 
 main: runtime.c output.s
 	$(CC) $(OPTS) runtime.c output.s -o main

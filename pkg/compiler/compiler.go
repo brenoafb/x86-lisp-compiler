@@ -64,9 +64,8 @@ func (c *Compiler) Compile(code string) error {
 		return fmt.Errorf("preprocessor error: %w", err)
 	}
 
-	fmt.Printf("%s", e.String())
+	fmt.Printf("%s\n", e.String())
 
-	c.preamble()
 	err = c.compileExpr(e)
 
 	if err != nil {
@@ -128,7 +127,48 @@ func (c *Compiler) gatherLambdas(
 		for _, elem := range elems {
 			elem, err := c.gatherLambdas(elem, counter, lambdas)
 			if err != nil {
-				return expr.Nil(), fmt.Errorf("error annotating free variables in sub expression: %w", err)
+				return expr.Nil(), fmt.Errorf("error gathering lambdas in sub expression: %w", err)
+			}
+			newExpr = append(newExpr, elem)
+		}
+
+		return expr.L(newExpr...), nil
+
+	default:
+		return e, nil
+	}
+}
+
+func (c *Compiler) gatherStrings(
+	e expr.E,
+	counter *int,
+	strings map[string]expr.E,
+) (expr.E, error) {
+	switch e.Typ {
+	case expr.ExprString:
+		k := *counter
+		*counter = *counter + 1
+		label := fmt.Sprintf("s%d", k)
+
+		newExpr := []expr.E{
+			expr.Id("string-ref"),
+			expr.Id(label),
+		}
+
+		strings[label] = expr.L(
+			expr.Id("string-init"),
+			e,
+		)
+
+		return expr.L(newExpr...), nil
+	case expr.ExprList:
+		elems := e.List
+		newExpr := make([]expr.E, 0, len(elems))
+
+		for _, elem := range elems {
+			elem, err := c.gatherStrings(elem, counter, strings)
+			if err != nil {
+				return expr.Nil(), fmt.Errorf("gathering strings sub expression: %w", err)
 			}
 			newExpr = append(newExpr, elem)
 		}
@@ -156,6 +196,24 @@ func (c *Compiler) preprocess(e expr.E) (expr.E, error) {
 		return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
 	}
 
+	counter = 0
+	strings := make(map[string]expr.E)
+
+	e, err = c.gatherStrings(e, &counter, strings)
+
+	if err != nil {
+		return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+	}
+
+	constants := []expr.E{}
+
+	for k, v := range strings {
+		constants = append(constants, expr.L(
+			expr.Id(k),
+			v,
+		))
+	}
+
 	labels := []expr.E{}
 
 	for k, v := range lambdas {
@@ -166,7 +224,8 @@ func (c *Compiler) preprocess(e expr.E) (expr.E, error) {
 	}
 
 	result := expr.L(
-		expr.Id("labels"),
+		expr.Id("_main"),
+		expr.L(constants...),
 		expr.L(labels...),
 		e,
 	)
@@ -354,7 +413,8 @@ func (c *Compiler) compileExpr(e expr.E) error {
 
 		return fmt.Errorf("unsupported operation %v", head)
 	default:
-		return fmt.Errorf("error compiling code: %+v", e)
+		// return fmt.Errorf("error compiling code: %+v", e.String())
+		panic(fmt.Errorf("error compiling code: %+v", e.String()))
 	}
 }
 
@@ -373,15 +433,6 @@ func (c *Compiler) clearEnv() {
 func (c *Compiler) emit(format string, a ...interface{}) {
 	s := fmt.Sprintf(format, a...)
 	fmt.Fprintln(c.W, s)
-}
-
-func (c *Compiler) preamble() {
-	preamble := `    .text
-    .globl  scheme_entry
-    .p2align    2
-scheme_entry:
-movl %%eax, %%esi`
-	c.emit(preamble)
 }
 
 func (c *Compiler) genLabel() string {
