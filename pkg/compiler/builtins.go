@@ -435,6 +435,12 @@ func init() {
 			c.emit("addl $4, %%eax")
 			return nil
 		},
+		"ccall": func(c *Compiler, elems []expr.E) error {
+			if len(elems) < 2{
+				return fmt.Errorf("ccall must have at least one argument")
+			}
+			return fmt.Errorf("ccall: not implemented")
+		},
 		"integer->char": func(c *Compiler, elems []expr.E) error {
 			x := elems[1]
 			err := c.compileExpr(x)

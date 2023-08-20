@@ -14,7 +14,7 @@ main: runtime.c output.s
 
 .PHONY: test
 test: 
-	go test ./pkg/compiler ./pkg/parser
+	go test ./pkg/compiler ./pkg/parser ./pkg/preprocess
 
 .PHONY: run 
 run: main
