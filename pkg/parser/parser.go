@@ -13,9 +13,22 @@ func pop(x []string) (string, []string) {
 	return x[0], x[1:]
 }
 
+func Parse(tokens *Tokens) ([]expr.E, error) {
+	es := make([]expr.E, 0)
+	for len(tokens.tokens) > 0 {
+		e, err := parseExpr(tokens)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing expressions: %w", err)
+		}
+		es = append(es, e)
+	}
+
+	return es, nil
+}
+
 // Contract: upon return, each call to parse will have
 // head(tokens) be the first unparsed token in the sequence
-func Parse(tokens *Tokens) (expr.E, error) {
+func parseExpr(tokens *Tokens) (expr.E, error) {
 	if len(tokens.tokens) == 0 {
 		return expr.L(), fmt.Errorf("cannot parse empty token sequence")
 	}
@@ -36,7 +49,7 @@ func Parse(tokens *Tokens) (expr.E, error) {
 			elems := make([]expr.E, 0)
 
 			for tokens.head().Typ != TokenRParen {
-				n, err := Parse(tokens)
+				n, err := parseExpr(tokens)
 				if err != nil {
 					return expr.Nil(), fmt.Errorf("error parsing list: %w\n", err)
 				}
@@ -49,3 +62,4 @@ func Parse(tokens *Tokens) (expr.E, error) {
 		}
 	}
 }
+

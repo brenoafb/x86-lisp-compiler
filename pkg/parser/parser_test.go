@@ -118,7 +118,7 @@ func TestParseEmptyList(t *testing.T) {
 	code := "()"
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)
-	result, err := Parse(tokens)
+	result, err := parseExpr(tokens)
 	require.NoError(t, err)
 
 	require.Equal(t, result, expr.Nil())
@@ -129,7 +129,7 @@ func TestParseSingletonList(t *testing.T) {
 	expected := expr.L(expr.Id("hello"))
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)
-	result, err := Parse(tokens)
+	result, err := parseExpr(tokens)
 	require.NoError(t, err)
 
 	require.Equal(t, expected, result)
@@ -141,7 +141,7 @@ func TestParseFlatList(t *testing.T) {
 
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)
-	result, err := Parse(tokens)
+	result, err := parseExpr(tokens)
 	require.NoError(t, err)
 
 	require.Equal(t, expected, result)
@@ -154,6 +154,29 @@ func TestParseLet(t *testing.T) {
 		expr.L(expr.Id("x"), expr.N(1)),
 		expr.Id("x"),
 	)
+
+	tokens, err := Tokenize(code)
+	require.NoError(t, err)
+	result, err := parseExpr(tokens)
+	require.NoError(t, err)
+
+	require.Equal(t, expected, result)
+}
+
+func TestParseMultipleExprs(t *testing.T) {
+	code := "(+ x 1) (+ x 2)"
+	expected := []expr.E{
+		expr.L(
+			expr.Id("+"),
+			expr.Id("x"),
+			expr.N(1),
+		),
+		expr.L(
+			expr.Id("+"),
+			expr.Id("x"),
+			expr.N(2),
+		),
+	}
 
 	tokens, err := Tokenize(code)
 	require.NoError(t, err)

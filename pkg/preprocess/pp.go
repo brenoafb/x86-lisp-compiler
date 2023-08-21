@@ -6,38 +6,52 @@ import (
 	"github.com/brenoafb/tinycompiler/pkg/expr"
 )
 
-func Preprocess(e expr.E) (expr.E, error) {
-	e, err := annotateFreeVariables(e)
-
-	if err != nil {
-		return expr.Nil(), fmt.Errorf("preprocess: error annotating lambdas: %w", err)
+func Preprocess(es []expr.E, name string) (expr.E, error) {
+	for i, e := range es {
+		e, err := annotateFreeVariables(e)
+		if err != nil {
+			return expr.Nil(), fmt.Errorf("preprocess: error annotating lambdas at index %d: %w", i, err)
+		}
+		es[i] = e
 	}
 
 	counter := 0
 	lambdas := make(map[string]expr.E)
 
-	e, err = gatherLambdas(e, &counter, lambdas)
+	var err error
+	for i, e := range es {
+		e, err = gatherLambdas(e, &counter, lambdas)
 
-	if err != nil {
-		return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+		if err != nil {
+			return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+		}
+		es[i] = e
 	}
 
 	counter = 0
 	strings := make(map[string]expr.E)
 
-	e, err = gatherStrings(e, &counter, strings)
+	for i, e := range es {
+		e, err = gatherStrings(e, &counter, strings)
 
-	if err != nil {
-		return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+		if err != nil {
+			return expr.Nil(), fmt.Errorf("preprocess: error gathering lambdas: %w", err)
+		}
+
+		es[i] = e
 	}
+
+	defuns := make(map[string]expr.E)
+	es, err = gatherDefuns(es, defuns)
 
 	constants := []expr.E{}
 
 	for k, v := range strings {
-		constants = append(constants, expr.L(
+		l := expr.L(
 			expr.Id(k),
 			v,
-		))
+		)
+		constants = append(constants, l)
 	}
 
 	labels := []expr.E{}
@@ -49,12 +63,25 @@ func Preprocess(e expr.E) (expr.E, error) {
 		))
 	}
 
+	exports := []expr.E{}
+
+	for k, v := range defuns {
+		exports = append(exports, expr.L(
+			expr.Id(k),
+			v,
+		))
+	}
+
 	result := expr.L(
-		expr.Id("_main"),
+		expr.Id(name),
+		expr.L(exports...),
 		expr.L(constants...),
 		expr.L(labels...),
-		e,
 	)
+
+	for _, e := range es {
+		result.List = append(result.List, e)
+	}
 
 	return result, nil
 }
@@ -183,7 +210,6 @@ func gatherFreeVariables(
 	return nil
 }
 
-
 func gatherLambdas(
 	e expr.E,
 	counter *int,
@@ -287,4 +313,46 @@ func gatherStrings(
 	default:
 		return e, nil
 	}
+}
+
+func gatherDefuns(
+	es []expr.E,
+	defuns map[string]expr.E,
+) ([]expr.E, error) {
+	for i, e := range es {
+		switch e.Typ {
+		case expr.ExprList:
+			elems := e.List
+			if expr.IsIdent(elems[0], "defun") {
+				name := elems[1]
+				args := elems[2]
+				body := elems[3]
+
+				if name.Typ != expr.ExprIdent {
+					return nil, fmt.Errorf("malformed defun form")
+				}
+
+				if args.Typ != expr.ExprList && args.Typ != expr.ExprNil {
+					return nil, fmt.Errorf("malformed defun form")
+				}
+
+				code := expr.L(
+					expr.Id("code"),
+					args,
+					expr.L(),
+					body,
+				)
+
+				defuns[name.Ident] = code
+
+				es[i] = expr.Nil()
+				continue
+			}
+
+			es[i] = e
+		default:
+			es[i] = e
+		}
+	}
+	return es, nil
 }

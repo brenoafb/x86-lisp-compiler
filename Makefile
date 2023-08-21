@@ -6,17 +6,22 @@ all: main
 expr: pkg/expr/*.go
 	go build ./pkg/expr/
 
+.PHONY: test
 preprocess: expr cmd/preprocess/*.go pkg/preprocess/*.go
 	go install ./cmd/preprocess/
 
+.PHONY: test
 compiler: expr cmd/compiler/*.go pkg/compiler/*.go
 	go install ./cmd/compiler/
 
-%.s: %.lisp compiler
+%.pp.lisp: %.lisp preprocess
+	preprocess -i $< -o $@
+
+%.s: %.pp.lisp compiler
 	compiler -i $< -o $@ -np
 
-main: runtime.c lisp_entry.s
-	$(CC) $(OPTS) runtime.c lisp_entry.s -o main
+main: runtime.c lisp_entry.s stdlib.s
+	$(CC) $(OPTS) runtime.c *.s -o main
 
 .PHONY: test
 test: 

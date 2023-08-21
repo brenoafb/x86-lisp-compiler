@@ -49,8 +49,9 @@ func NewCompiler(w io.Writer) *Compiler {
 
 func (c *Compiler) Compile(e expr.E) error {
 	// we expect input to have format
-	// (ident (<constants>)
-	//        (<procedures>)
+	// (ident (<exported definitions>)
+	//        (<constants>)
+	//        (<internal procedures>)
 	//   <body>)
 	if e.Typ != expr.ExprList {
 		return fmt.Errorf("input is no in expected format")
@@ -58,8 +59,8 @@ func (c *Compiler) Compile(e expr.E) error {
 
 	elems := e.List
 
-	if len(elems) != 4 {
-		return fmt.Errorf("top-level form must contain 4 elements")
+	if len(elems) < 5 {
+		return fmt.Errorf("top-level form must contain at least 5 elements")
 	}
 
 	if elems[0].Typ != expr.ExprIdent {
@@ -80,15 +81,23 @@ func (c *Compiler) Compile(e expr.E) error {
 		)
 	}
 
-	cvars := elems[1].List
+	exports := elems[1].List
 
 	if elems[2].Typ != expr.ExprList && elems[2].Typ != expr.ExprNil {
+		return fmt.Errorf(
+			"malformed top-level form: constants entry is not list",
+		)
+	}
+
+	cvars := elems[2].List
+
+	if elems[3].Typ != expr.ExprList && elems[3].Typ != expr.ExprNil {
 		return fmt.Errorf(
 			"malformed top-level form: procedures entry is not list",
 		)
 	}
 
-	lvars := elems[2].List
+	lvars := elems[3].List
 
 	c.emit("\t.data")
 	c.emit("\t.align\t8")
@@ -123,9 +132,48 @@ func (c *Compiler) Compile(e expr.E) error {
 		}
 	}
 
+	gatheredExports := make(map[string]expr.E)
+
+	for i, export := range exports {
+		if export.Typ != expr.ExprList && export.Typ != expr.ExprNil {
+			return fmt.Errorf(
+				"malformed top-level form: export at index %d is not list",
+				i,
+			)
+		}
+		tuple := export.List
+		if len(tuple) != 2 {
+			return fmt.Errorf("bad export in label form at index %d", i)
+		}
+
+		if tuple[0].Typ != expr.ExprIdent {
+			return fmt.Errorf(
+				"malformed 'label' form: identifier at index %d is not identifier",
+				i,
+			)
+		}
+
+		name := tuple[0].Ident
+		body := tuple[1]
+
+		gatheredExports[name] = body
+	}
+
 	c.emit("\t.text")
-	c.emit("\t.global %s", topLevelName)
 	c.emit("\t.p2align\t2")
+	c.emit("\t.global %s", topLevelName)
+	for name := range gatheredExports {
+		c.emit("\t.global %s", name)
+	}
+
+	for name, body := range gatheredExports {
+		c.emit("%s:", name)
+
+		err := c.compileExpr(body)
+		if err != nil {
+			return fmt.Errorf("error compiling export body: %w", err)
+		}
+	}
 
 	for i, lvar := range lvars {
 		if lvar.Typ != expr.ExprList && lvar.Typ != expr.ExprNil {
@@ -157,13 +205,12 @@ func (c *Compiler) Compile(e expr.E) error {
 		}
 	}
 
-	body := elems[3]
-
 	c.emit("%s:", topLevelName)
-
-	err := c.compileExpr(body)
-	if err != nil {
-		return fmt.Errorf("error compiling body in _main form: %w", err)
+	for _, body := range elems[4:] {
+		err := c.compileExpr(body)
+		if err != nil {
+			return fmt.Errorf("error compiling body in _main form: %w", err)
+		}
 	}
 
 	c.emit("ret")

@@ -48,8 +48,10 @@ func TestGatherFreeVariables(t *testing.T) {
 
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			expr, err := parser.Parse(tokens)
+			exprs, err := parser.Parse(tokens)
 			require.NoError(t, err)
+			require.Len(t, exprs, 1)
+			expr := exprs[0]
 
 			freeVars := map[string]struct{}{}
 			err = gatherFreeVariables(expr, argsMap, freeVars)
@@ -121,8 +123,10 @@ func TestAnnotateFreeVariables(t *testing.T) {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			expr, err := parser.Parse(tokens)
+			exprs, err := parser.Parse(tokens)
 			require.NoError(t, err)
+			require.Len(t, exprs, 1)
+			expr := exprs[0]
 
 			result, err := annotateFreeVariables(expr)
 			require.NoError(t, err)
@@ -166,8 +170,10 @@ func TestGatherStrings(t *testing.T) {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			e, err := parser.Parse(tokens)
+			es, err := parser.Parse(tokens)
 			require.NoError(t, err)
+			require.Len(t, es, 1)
+			e := es[0]
 
 			strings := make(map[string]expr.E)
 			counter := 0
@@ -253,8 +259,10 @@ func TestGatherLambdas(t *testing.T) {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			e, err := parser.Parse(tokens)
+			es, err := parser.Parse(tokens)
 			require.NoError(t, err)
+			require.Len(t, es, 1)
+			e := es[0]
 
 			lambdas := make(map[string]expr.E)
 			counter := 0
@@ -279,7 +287,8 @@ func TestPreprocess(t *testing.T) {
 		{
 			code: "1",
 			expected: expr.L(
-				expr.Id("_main"),
+				expr.Id("test"),
+				expr.L(),
 				expr.L(),
 				expr.L(),
 				expr.N(1),
@@ -288,7 +297,8 @@ func TestPreprocess(t *testing.T) {
 		{
 			code: "(+ 1 2)",
 			expected: expr.L(
-				expr.Id("_main"),
+				expr.Id("test"),
+				expr.L(),
 				expr.L(),
 				expr.L(),
 				expr.L(expr.Id("+"), expr.N(1), expr.N(2)),
@@ -297,7 +307,8 @@ func TestPreprocess(t *testing.T) {
 		{
 			code: "(lambda (x) (+ x 1))",
 			expected: expr.L(
-				expr.Id("_main"),
+				expr.Id("test"),
+				expr.L(),
 				expr.L(),
 				expr.L(
 					expr.L(
@@ -316,7 +327,8 @@ func TestPreprocess(t *testing.T) {
 		{
 			code: "((lambda (x) (+ x 1)) 1)",
 			expected: expr.L(
-				expr.Id("_main"),
+				expr.Id("test"),
+				expr.L(),
 				expr.L(),
 				expr.L(
 					expr.L(
@@ -338,7 +350,8 @@ func TestPreprocess(t *testing.T) {
 		{
 			code: "(lambda (y) (lambda () (+ x y)))",
 			expected: expr.L(
-				expr.Id("_main"),
+				expr.Id("test"),
+				expr.L(),
 				expr.L(),
 				expr.L(
 					expr.L(
@@ -363,18 +376,38 @@ func TestPreprocess(t *testing.T) {
 				expr.L(expr.Id("closure"), expr.Id("f1"), expr.Id("x")),
 			),
 		},
+		{
+			code: "(defun succ (x) (+ x 1))",
+			expected: expr.L(
+				expr.Id("test"),
+				expr.L(
+					expr.L(
+						expr.Id("succ"),
+						expr.L(
+							expr.Id("code"),
+							expr.L(expr.Id("x")),
+							expr.L(),
+							expr.L(expr.Id("+"), expr.Id("x"), expr.N(1)),
+						),
+					),
+				),
+				expr.L(),
+				expr.L(),
+				expr.L(),
+			),
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) { // Use the code as the descriptor
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			expr, err := parser.Parse(tokens)
+			exprs, err := parser.Parse(tokens)
+
+			result, err := Preprocess(exprs, "test")
 			require.NoError(t, err)
 
-			result, err := Preprocess(expr)
-			require.NoError(t, err)
-
+			fmt.Printf("%s\n", tt.expected.String())
 			fmt.Printf("%s\n", result.String())
 
 			require.Equal(t, tt.expected, result)
