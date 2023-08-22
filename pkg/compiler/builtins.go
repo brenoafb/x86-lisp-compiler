@@ -224,12 +224,10 @@ func init() {
 			// save closure pointer
 			c.emit("movl %%edi, %d(%%esp)", siBefore)
 
-			c.emit("// compiling closure")
 			err := c.compileExpr(f)
 			if err != nil {
 				return fmt.Errorf("error compiling function in funcall: %w", err)
 			}
-			c.emit("// done")
 
 			// move new closure into closure pointer
 			c.emit("movl %%eax, %%edi")
