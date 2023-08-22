@@ -99,6 +99,57 @@ orl $1, %eax
 addl $8, %esi
 `,
 		},
+		{
+			code: "(code () () (+ 1 2))",
+			expected: `movl $8, %eax
+movl %eax, -4(%esp)
+movl $4, %eax
+addl -4(%esp), %eax
+ret
+`,
+		},
+		{
+			code: "(code (x) () (+ x 1))",
+			expected: `movl $4, %eax
+movl %eax, -8(%esp)
+movl -4(%esp), %eax
+addl -8(%esp), %eax
+ret
+`,
+		},
+		{
+			code: "(code (x) (y) (+ x y))",
+			expected: `movl 4(%edi), %eax
+movl %eax, -8(%esp)
+movl -4(%esp), %eax
+addl -8(%esp), %eax
+ret
+`,
+		},
+		{
+			code: "(closure f0)",
+			expected: `movl $f0, 0(%esi)
+movl $1, %ebx
+movl %esi, %eax
+orl $6, %eax
+addl $11, %ebx
+andl $-8, %ebx
+addl %ebx, %esi
+`,
+		},
+		{
+			code: "(closure f0 4)",
+			expected: `movl $f0, 0(%esi)
+movl $16, %eax
+movl %eax, 4(%esi)
+movl $2, %ebx
+movl %esi, %eax
+orl $6, %eax
+addl $11, %ebx
+andl $-8, %ebx
+addl %ebx, %esi
+`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -108,8 +159,10 @@ addl $8, %esi
 
 			tokens, err := parser.Tokenize(tt.code)
 			require.NoError(t, err)
-			expr, err := parser.Parse(tokens)
+			exprs, err := parser.Parse(tokens)
 			require.NoError(t, err)
+			require.Len(t, exprs, 1)
+			expr := exprs[0]
 
 			err = c.compileExpr(expr)
 			require.NoError(t, err)
@@ -117,4 +170,3 @@ addl $8, %esi
 		})
 	}
 }
-

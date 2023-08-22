@@ -28,9 +28,7 @@ int lisp_entry(void *heap);
 
 int main(int argc, char *argv[]) {
 	void *heap = malloc(HEAPSIZE);
-	printf("heap: 0x%x\n", heap);
 	int val = lisp_entry(heap);
-	printf("0x%x\n", val);
 	if ((val & fixnum_mask) == fixnum_tag) {
 		printf("%d\n", val >> fixnum_shift);
 	} else if ((val & char_mask) == char_tag) {
@@ -46,7 +44,6 @@ int main(int argc, char *argv[]) {
 		printf("#<vector 0x%x>\n", val);
 	} else if ((val & ptr_mask) == string_tag) {
 		printf("#<string 0x%x>\n", val);
-		printf("%s\n", val & ~3);
 	} else if ((val & ptr_mask) == symbol_tag) {
 		printf("#<symbol 0x%x>\n", val);
 	} else if ((val & ptr_mask) == closure_tag) {

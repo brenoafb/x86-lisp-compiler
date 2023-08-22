@@ -206,6 +206,7 @@ func (c *Compiler) Compile(e expr.E) error {
 	}
 
 	c.emit("%s:", topLevelName)
+	c.emit("movl %%eax, %%esi")
 	for _, body := range elems[4:] {
 		err := c.compileExpr(body)
 		if err != nil {
@@ -260,6 +261,29 @@ func (c *Compiler) compileExpr(e expr.E) error {
 			if proc, ok := builtins[head.Ident]; ok {
 				return proc(c, elems)
 			}
+
+			if _, ok := c.env[head.Ident]; ok {
+				newExpr := []expr.E{
+					expr.Id("funcall"),
+				}
+
+				for _, elem := range elems {
+					newExpr = append(newExpr, elem)
+				}
+
+				return c.compileExpr(expr.L(newExpr...))
+			}
+
+			// assume the procedure is defined as a label
+			newExpr := []expr.E{
+				expr.Id("labelcall"),
+			}
+
+			for _, elem := range elems {
+				newExpr = append(newExpr, elem)
+			}
+
+			return c.compileExpr(expr.L(newExpr...))
 		case expr.ExprList:
 			newExpr := []expr.E{
 				expr.Id("funcall"),
@@ -272,11 +296,9 @@ func (c *Compiler) compileExpr(e expr.E) error {
 			return c.compileExpr(expr.L(newExpr...))
 		}
 
-		// return fmt.Errorf("unsupported operation %s", head.String())
-		panic(fmt.Errorf("unsupported operation %s", head.String()))
+		return fmt.Errorf("unsupported operation %s", head.String())
 	default:
-		// return fmt.Errorf("error compiling code: %+v", e.String())
-		panic(fmt.Errorf("error compiling code: %+v", e.String()))
+		return fmt.Errorf("error compiling code: %+v", e.String())
 	}
 }
 

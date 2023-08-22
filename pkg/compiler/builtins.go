@@ -154,7 +154,7 @@ func init() {
 				}
 				c.env[arg.Ident] = location{
 					location: closure,
-					offset:   -wordsize * (i + 1),
+					offset:   wordsize * (i + 1),
 				}
 			}
 
@@ -224,10 +224,12 @@ func init() {
 			// save closure pointer
 			c.emit("movl %%edi, %d(%%esp)", siBefore)
 
+			c.emit("// compiling closure")
 			err := c.compileExpr(f)
 			if err != nil {
 				return fmt.Errorf("error compiling function in funcall: %w", err)
 			}
+			c.emit("// done")
 
 			// move new closure into closure pointer
 			c.emit("movl %%eax, %%edi")
@@ -250,7 +252,7 @@ func init() {
 			}
 
 			if elems[1].Typ != expr.ExprIdent {
-				return fmt.Errorf("malformed 'labelcall' form")
+				return fmt.Errorf("malformed 'closure' form")
 			}
 
 			l := elems[1].Ident
@@ -258,9 +260,6 @@ func init() {
 			for i, freevar := range elems[2:] {
 				// TODO copy free variable value directly instead
 				// of moving to eax then to heap
-				if freevar.Typ != expr.ExprIdent {
-					return fmt.Errorf("malformed closure form")
-				}
 				err := c.compileExpr(freevar)
 				if err != nil {
 					return fmt.Errorf(
@@ -273,7 +272,7 @@ func init() {
 				c.emit("movl %%eax, %d(%%esi)", wordsize*(i+1))
 			}
 
-			length := len(elems) - 2
+			length := len(elems) - 1
 
 			c.emit("movl $%d, %%ebx", length)
 			// eax = esi | 6
